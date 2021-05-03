@@ -1,2 +1,4 @@
 bind_addr = ":8010"
 log_level = "info"
+db_path = "/tmp/sqlite.db"
+query_timeout = 10

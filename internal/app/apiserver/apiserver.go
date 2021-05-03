@@ -1,46 +1,46 @@
 package apiserver
 
 import (
-	"database/sql"
-	_ "github.com/mattn/go-sqlite3"
 	"net/http"
+
+	"github.com/gasparian/money-transfers-api/internal/app/store"
+	"github.com/gasparian/money-transfers-api/internal/app/store/sqlstore"
 )
 
-// APIServer __
+// APIServer holds data needed to run api server
 type APIServer struct {
 	config *Config
 	logger *logger
 	router *http.ServeMux
+	store  store.Store
 }
 
-// New __
+// New creates new instance of APIServer struct
 func New(config *Config) *APIServer {
-	return &APIServer{
+	s := &APIServer{
 		config: config,
 		logger: NewLogger(),
 		router: http.NewServeMux(),
 	}
-}
-
-// Start __
-func (s *APIServer) Start() error {
 	s.configureLogger()
 	s.configureRouter()
-	s.logger.Info("Starting api server")
-	return http.ListenAndServe(s.config.BindAddr, s.router)
+	return s
 }
 
-func newDB(dbPath string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", dbPath)
+func (s *APIServer) setStore(store store.Store) {
+	s.store = store
+}
+
+// Start run db and api server
+func (s *APIServer) Start() error {
+	store, err := sqlstore.New(s.config.DbPath, s.config.QueryTimeout)
 	if err != nil {
-		return nil, err
+		return nil
 	}
-
-	if err := db.Ping(); err != nil {
-		return nil, err
-	}
-
-	return db, nil
+	defer store.Close()
+	s.setStore(store)
+	s.logger.Info("Starting api server")
+	return http.ListenAndServe(s.config.BindAddr, s.router)
 }
 
 func (s *APIServer) configureLogger() {
