@@ -3,6 +3,7 @@ package sqlstore
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
 	"github.com/gasparian/money-transfers-api/internal/app/models"
@@ -51,7 +52,7 @@ func (s *Store) Close() {
 func (s *Store) createAccountsTable() error {
 	q := `CREATE TABLE IF NOT EXISTS account (
 		account_id INTEGER NOT NULL PRIMARY KEY,
-		balance INTEGER CHECK(balance >= 0)
+		balance REAL CHECK(balance >= 0.0)
 	);`
 	_, err := s.db.Exec(q)
 	if err != nil {
@@ -71,13 +72,13 @@ func (s *Store) createTransfersTable() error {
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS transfer (
 	    	transfer_id INTEGER NOT NULL PRIMARY KEY,
-	    	timesamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-	    	from_account_id INTEGER NOT NULL,
-	    	to_account_id INTEGER NOT NULL,
-	    	amount INTEGER CHECK(amount > 0)
+	    	timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+	    	from_account_id INTEGER,
+	    	to_account_id INTEGER,
+	    	amount REAL CHECK(amount > 0.0)
 	    );`,
-		`CREATE INDEX idx_from_account_id ON transfer(from_account_id)`,
-		`CREATE INDEX idx_to_account_id ON transfer(to_account_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_from_account_id ON transfer(from_account_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_to_account_id ON transfer(to_account_id)`,
 	}
 	for _, q := range queries {
 		_, err := tx.Exec(q)
@@ -90,9 +91,15 @@ func (s *Store) createTransfersTable() error {
 	return nil
 }
 
-// DropTables removes table from the db
-func (s *Store) DropTable(tableName string) error {
-	_, err := s.db.Exec("DROP TABLE IF EXISTS ?", tableName)
+// dropTables removes table from the db
+// non-exposed method, because of potential sql-injections
+func (s *Store) dropTable(tableName string) error {
+	_, err := s.db.Exec(
+		fmt.Sprintf(
+			"DROP TABLE IF EXISTS %s",
+			tableName,
+		),
+	)
 	if err != nil {
 		return err
 	}
@@ -101,10 +108,14 @@ func (s *Store) DropTable(tableName string) error {
 
 // InsertAccount inserts new account into the accounts table and returns row's id
 func (s *Store) InsertAccount(acc *models.Account) error {
-	err := s.db.QueryRow(
-		"INSERT INTO account(balance) VALUES ($1) ",
+	res, err := s.db.Exec(
+		"INSERT INTO account(balance) VALUES ($1)",
 		acc.Balance,
-	).Scan(&acc.AccountID)
+	)
+	if err != nil {
+		return err
+	}
+	acc.AccountID, err = res.LastInsertId()
 	if err != nil {
 		return err
 	}
@@ -112,11 +123,11 @@ func (s *Store) InsertAccount(acc *models.Account) error {
 }
 
 // GetBalance returns account balance by it's id
-func (s *Store) GetBalance(accountID int64) (int64, error) {
+func (s *Store) GetBalance(accountID int64) (float64, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.queryTimeout)
 	defer cancel()
 
-	var balance int64
+	var balance float64
 	err := s.db.QueryRowContext(
 		ctx,
 		"SELECT balance FROM account WHERE account_id=$1",
@@ -128,6 +139,68 @@ func (s *Store) GetBalance(accountID int64) (int64, error) {
 	return balance, nil
 }
 
+// Deposit adds money to the account
+func (s *Store) Deposit(tr *models.Transfer) error {
+	ctx, cancel := context.WithTimeout(context.Background(), s.queryTimeout)
+	defer cancel()
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(
+		"UPDATE account SET balance = balance + $1 WHERE account_id=$2",
+		tr.Amount,
+		tr.ToAccountID,
+	)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	_, err = tx.Exec(
+		"INSERT INTO transfer(from_account_id, to_account_id, amount) VALUES (0, $1, $2)",
+		tr.ToAccountID,
+		tr.Amount,
+	)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	tx.Commit()
+	return nil
+}
+
+// Withdraw pulls money from the account
+func (s *Store) Withdraw(tr *models.Transfer) error {
+	ctx, cancel := context.WithTimeout(context.Background(), s.queryTimeout)
+	defer cancel()
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(
+		"UPDATE account SET balance = balance + $1 WHERE account_id=$2",
+		-tr.Amount,
+		tr.FromAccountID,
+	)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	_, err = tx.Exec(
+		"INSERT INTO transfer(from_account_id, to_account_id, amount) VALUES ($1, 0, $2)",
+		tr.FromAccountID,
+		tr.Amount,
+	)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	tx.Commit()
+	return nil
+}
+
 // Transfer transfers money from one account to another; writes transfer info into the transfers table
 func (s *Store) Transfer(tr *models.Transfer) (*models.TransferResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.queryTimeout)
@@ -137,43 +210,72 @@ func (s *Store) Transfer(tr *models.Transfer) (*models.TransferResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	res := models.TransferResult{Transfer: *tr}
-	err = tx.QueryRow(
-		"UPDATE account SET balance = balance + $1 WHERE account_id=$2 RETURNING balance",
+	trRes := models.TransferResult{Transfer: *tr}
+	_, err = tx.Exec(
+		"UPDATE account SET balance = balance + $1 WHERE account_id=$2",
 		-tr.Amount,
 		tr.FromAccountID,
-	).Scan(&res.FromAccountIDBalance)
+	)
 	if err != nil {
 		tx.Rollback()
-		return nil, nil
+		return nil, err
 	}
 	err = tx.QueryRow(
-		"UPDATE account SET balance = balance + $1 WHERE account_id=$2 RETURNING balance",
+		"SELECT balance FROM account WHERE account_id=$1",
+		tr.FromAccountID,
+	).Scan(&trRes.FromAccountIDBalance)
+	if err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	_, err = tx.Exec(
+		"UPDATE account SET balance = balance + $1 WHERE account_id=$2",
 		tr.Amount,
 		tr.ToAccountID,
-	).Scan(&res.ToAccountIDBalance)
+	)
 	if err != nil {
 		tx.Rollback()
-		return nil, nil
+		return nil, err
 	}
 	err = tx.QueryRow(
-		"INSERT INTO transfer(from_account_id, to_account_id, amount) VALUES ($1, $2, $3) RETURNING (transfer_id, timestamp)",
+		"SELECT balance FROM account WHERE account_id=$1",
+		tr.ToAccountID,
+	).Scan(&trRes.ToAccountIDBalance)
+	if err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	res, err := tx.Exec(
+		"INSERT INTO transfer(from_account_id, to_account_id, amount) VALUES ($1, $2, $3)",
 		tr.FromAccountID,
 		tr.ToAccountID,
 		tr.Amount,
-	).Scan(&res.Transfer.TransferID, &res.Transfer.Timestamp)
+	)
 	if err != nil {
 		tx.Rollback()
-		return nil, nil
+		return nil, err
+	}
+	trRes.Transfer.TransferID, err = res.LastInsertId()
+	if err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	err = tx.QueryRow(
+		"SELECT timestamp FROM transfer WHERE transfer_id=$1",
+		trRes.Transfer.TransferID,
+	).Scan(&trRes.Transfer.Timestamp)
+	if err != nil {
+		tx.Rollback()
+		return nil, err
 	}
 	tx.Commit()
-	return &res, nil
+	return &trRes, nil
 }
 
 // DeleteAccount removes account from the accounts table
 func (s *Store) DeleteAccount(accountID int64) error {
 	_, err := s.db.Exec(
-		"DELETE FROM account WHERE id=$1",
+		"DELETE FROM account WHERE account_id=$1",
 		accountID,
 	)
 	if err != nil {
@@ -182,15 +284,14 @@ func (s *Store) DeleteAccount(accountID int64) error {
 	return nil
 }
 
-// GetTranscationsHistory retunrs array of transcation for certain period of time
-func (s *Store) GetTranscationsHistory(accountID, nDays int64) ([]models.Transfer, error) {
+// GetTransfersHistory retunrs array of transcations for the requested period of time
+func (s *Store) GetTransfersHistory(accountID int64) ([]models.Transfer, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.queryTimeout)
 	defer cancel()
 
 	row, err := s.db.QueryContext(
 		ctx,
-		"SELECT * FROM transfer WHERE timestamp < date('now', '-$1 days') AND (from_account_id=$2 OR to_account_id=$2)",
-		nDays,
+		"SELECT * FROM transfer WHERE from_account_id=$1 OR to_account_id=$1",
 		accountID,
 	)
 	if err != nil {

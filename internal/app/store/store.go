@@ -7,8 +7,10 @@ import (
 // Store ...
 type Store interface {
 	InsertAccount(*models.Account) error
-	GetBalance(int64) (int64, error)
+	GetBalance(int64) (float64, error)
+	Deposit(*models.Transfer) error
+	Withdraw(*models.Transfer) error
 	Transfer(*models.Transfer) (*models.TransferResult, error)
 	DeleteAccount(int64) error
-	GetTranscationsHistory(int64, int64) ([]models.Transfer, error)
+	GetTransfersHistory(int64) ([]models.Transfer, error)
 }

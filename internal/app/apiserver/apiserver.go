@@ -31,7 +31,7 @@ func (s *APIServer) setStore(store store.Store) {
 	s.store = store
 }
 
-// Start run db and api server
+// Start runs db and api server
 func (s *APIServer) Start() error {
 	store, err := sqlstore.New(s.config.DbPath, s.config.QueryTimeout)
 	if err != nil {
@@ -49,6 +49,13 @@ func (s *APIServer) configureLogger() {
 
 func (s *APIServer) configureRouter() {
 	s.router.HandleFunc("/health", s.handleHealth())
+	// s.router.HandleFunc("/create-account", s.handleCreateAccount())
+	// s.router.HandleFunc("/delete-account", s.handleDeleteAccount())
+	// s.router.HandleFunc("/transfer", s.handleTransfer())
+	// s.router.HandleFunc("/deposit", s.handleDeposit())
+	// s.router.HandleFunc("/withdraw", s.handleWithdraw())
+	// s.router.HandleFunc("/get-balance", s.handleGetBalance())
+	// s.router.HandleFunc("/get-transfers", s.handleGetTransfers())
 }
 
 func (s *APIServer) handleHealth() http.HandlerFunc {
