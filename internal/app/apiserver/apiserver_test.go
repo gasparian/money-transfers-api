@@ -65,7 +65,7 @@ func TestAPIServer(t *testing.T) {
 
 	t.Run("DeleteAccount", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		acc := models.Account{Balance: 100}
+		acc := models.Account{}
 		store.InsertAccount(&acc)
 		b, err := json.Marshal(acc)
 		if err != nil {
@@ -86,7 +86,6 @@ func TestAPIServer(t *testing.T) {
 		rec := httptest.NewRecorder()
 		acc := models.Account{Balance: 100}
 		store.InsertAccount(&acc)
-
 		b, err := json.Marshal(acc)
 		if err != nil {
 			t.Fatal(err)
@@ -112,7 +111,6 @@ func TestAPIServer(t *testing.T) {
 			ToAccountID: accTo.AccountID,
 			Amount:      100,
 		}
-
 		b, err := json.Marshal(tr)
 		if err != nil {
 			t.Fatal(err)
@@ -122,9 +120,10 @@ func TestAPIServer(t *testing.T) {
 		if rec.Code != 200 {
 			t.Error(badStatusCodeErr)
 		}
-
-		balance, err := store.GetBalance(accTo.AccountID)
-		if math.Abs(balance-100) > tol {
+		if err := json.NewDecoder(rec.Body).Decode(&accTo); err != nil {
+			t.Error(err)
+		}
+		if math.Abs(accTo.Balance-100) > tol {
 			t.Error(wrongAnswerErr)
 		}
 	})
@@ -137,7 +136,6 @@ func TestAPIServer(t *testing.T) {
 			FromAccountID: accFrom.AccountID,
 			Amount:        100,
 		}
-
 		b, err := json.Marshal(tr)
 		if err != nil {
 			t.Fatal(err)
@@ -147,9 +145,10 @@ func TestAPIServer(t *testing.T) {
 		if rec.Code != 200 {
 			t.Error(badStatusCodeErr)
 		}
-
-		balance, err := store.GetBalance(accFrom.AccountID)
-		if balance > tol {
+		if err := json.NewDecoder(rec.Body).Decode(&accFrom); err != nil {
+			t.Error(err)
+		}
+		if accFrom.Balance > tol {
 			t.Error(wrongAnswerErr)
 		}
 	})
@@ -165,7 +164,6 @@ func TestAPIServer(t *testing.T) {
 			ToAccountID:   accTo.AccountID,
 			Amount:        100,
 		}
-
 		b, err := json.Marshal(tr)
 		if err != nil {
 			t.Fatal(err)
@@ -204,7 +202,6 @@ func TestAPIServer(t *testing.T) {
 			AccountID: acc.AccountID,
 			NDays:     1,
 		}
-
 		b, err := json.Marshal(tr)
 		if err != nil {
 			t.Fatal(err)

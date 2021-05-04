@@ -114,13 +114,9 @@ func TestStore(t *testing.T) {
 			ToAccountID: acc.AccountID,
 			Amount:      42.42,
 		}
-		err = store.Deposit(tr)
+		balance, err := store.Deposit(tr)
 		if err != nil {
 			t.Fatal(err)
-		}
-		balance, err := store.GetBalance(acc.AccountID)
-		if err != nil {
-			t.Error(err)
 		}
 		if math.Abs(balance-tr.Amount) > tol {
 			t.Error(invalidBalanceValueErr)
@@ -137,13 +133,9 @@ func TestStore(t *testing.T) {
 			FromAccountID: acc.AccountID,
 			Amount:        100,
 		}
-		err = store.Withdraw(tr)
+		balance, err := store.Withdraw(tr)
 		if err != nil {
 			t.Fatal(err)
-		}
-		balance, err := store.GetBalance(acc.AccountID)
-		if err != nil {
-			t.Error(err)
 		}
 		if balance > tol {
 			t.Error(invalidBalanceValueErr)

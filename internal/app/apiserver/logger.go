@@ -47,28 +47,28 @@ func (l *logger) SetLevel(level string) {
 
 // Error writes out message based on current logging level
 func (l *logger) Error(msg string) {
-	if l.level <= errorLevel {
+	if l.level >= errorLevel {
 		l.err.Println(msg)
 	}
 }
 
 // Warn ...
 func (l *logger) Warn(msg string) {
-	if l.level <= warnLevel {
+	if l.level >= warnLevel {
 		l.warn.Println(msg)
 	}
 }
 
 // Info ...
 func (l *logger) Info(msg string) {
-	if l.level <= infoLevel {
+	if l.level >= infoLevel {
 		l.info.Println(msg)
 	}
 }
 
 // Debug ...
 func (l *logger) Debug(msg string) {
-	if l.level <= debugLevel {
+	if l.level >= debugLevel {
 		l.debug.Println(msg)
 	}
 }

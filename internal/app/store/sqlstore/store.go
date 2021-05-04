@@ -140,13 +140,13 @@ func (s *Store) GetBalance(accountID int64) (float64, error) {
 }
 
 // Deposit adds money to the account
-func (s *Store) Deposit(tr *models.Transfer) error {
+func (s *Store) Deposit(tr *models.Transfer) (float64, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.queryTimeout)
 	defer cancel()
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	_, err = tx.Exec(
 		"UPDATE account SET balance = balance + $1 WHERE account_id=$2",
@@ -155,7 +155,7 @@ func (s *Store) Deposit(tr *models.Transfer) error {
 	)
 	if err != nil {
 		tx.Rollback()
-		return err
+		return 0, err
 	}
 	_, err = tx.Exec(
 		"INSERT INTO transfer(from_account_id, to_account_id, amount) VALUES (0, $1, $2)",
@@ -164,20 +164,29 @@ func (s *Store) Deposit(tr *models.Transfer) error {
 	)
 	if err != nil {
 		tx.Rollback()
-		return err
+		return 0, err
+	}
+	var balance float64
+	err = tx.QueryRow(
+		"SELECT balance FROM account WHERE account_id=$1",
+		tr.ToAccountID,
+	).Scan(&balance)
+	if err != nil {
+		tx.Rollback()
+		return 0, err
 	}
 	tx.Commit()
-	return nil
+	return balance, nil
 }
 
 // Withdraw pulls money from the account
-func (s *Store) Withdraw(tr *models.Transfer) error {
+func (s *Store) Withdraw(tr *models.Transfer) (float64, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.queryTimeout)
 	defer cancel()
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	_, err = tx.Exec(
 		"UPDATE account SET balance = balance + $1 WHERE account_id=$2",
@@ -186,7 +195,7 @@ func (s *Store) Withdraw(tr *models.Transfer) error {
 	)
 	if err != nil {
 		tx.Rollback()
-		return err
+		return 0, err
 	}
 	_, err = tx.Exec(
 		"INSERT INTO transfer(from_account_id, to_account_id, amount) VALUES ($1, 0, $2)",
@@ -195,10 +204,19 @@ func (s *Store) Withdraw(tr *models.Transfer) error {
 	)
 	if err != nil {
 		tx.Rollback()
-		return err
+		return 0, err
+	}
+	var balance float64
+	err = tx.QueryRow(
+		"SELECT balance FROM account WHERE account_id=$1",
+		tr.FromAccountID,
+	).Scan(&balance)
+	if err != nil {
+		tx.Rollback()
+		return 0, err
 	}
 	tx.Commit()
-	return nil
+	return balance, nil
 }
 
 // Transfer transfers money from one account to another; writes transfer info into the transfers table
@@ -223,27 +241,11 @@ func (s *Store) Transfer(tr *models.Transfer) (*models.TransferResult, error) {
 		tx.Rollback()
 		return nil, err
 	}
-	err = tx.QueryRow(
-		"SELECT balance FROM account WHERE account_id=$1",
-		tr.FromAccountID,
-	).Scan(&trRes.FromAccountIDBalance)
-	if err != nil {
-		tx.Rollback()
-		return nil, err
-	}
 	_, err = tx.Exec(
 		"UPDATE account SET balance = balance + $1 WHERE account_id=$2",
 		tr.Amount,
 		tr.ToAccountID,
 	)
-	if err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-	err = tx.QueryRow(
-		"SELECT balance FROM account WHERE account_id=$1",
-		tr.ToAccountID,
-	).Scan(&trRes.ToAccountIDBalance)
 	if err != nil {
 		tx.Rollback()
 		return nil, err
@@ -259,6 +261,22 @@ func (s *Store) Transfer(tr *models.Transfer) (*models.TransferResult, error) {
 		return nil, err
 	}
 	trRes.TransferID, err = res.LastInsertId()
+	if err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	err = tx.QueryRow(
+		"SELECT balance FROM account WHERE account_id=$1",
+		tr.FromAccountID,
+	).Scan(&trRes.FromAccountIDBalance)
+	if err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	err = tx.QueryRow(
+		"SELECT balance FROM account WHERE account_id=$1",
+		tr.ToAccountID,
+	).Scan(&trRes.ToAccountIDBalance)
 	if err != nil {
 		tx.Rollback()
 		return nil, err
