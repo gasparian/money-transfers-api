@@ -12,5 +12,5 @@ type Store interface {
 	Withdraw(*models.Transfer) error
 	Transfer(*models.Transfer) (*models.TransferResult, error)
 	DeleteAccount(int64) error
-	GetTransfersHistory(int64) ([]models.Transfer, error)
+	GetTransfersHistory(*models.TransferHisotoryRequest) ([]models.Transfer, error)
 }

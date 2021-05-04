@@ -210,7 +210,10 @@ func (s *Store) Transfer(tr *models.Transfer) (*models.TransferResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	trRes := models.TransferResult{Transfer: *tr}
+	trRes := models.TransferResult{
+		FromAccountID: tr.FromAccountID,
+		ToAccountID:   tr.ToAccountID,
+	}
 	_, err = tx.Exec(
 		"UPDATE account SET balance = balance + $1 WHERE account_id=$2",
 		-tr.Amount,
@@ -255,15 +258,7 @@ func (s *Store) Transfer(tr *models.Transfer) (*models.TransferResult, error) {
 		tx.Rollback()
 		return nil, err
 	}
-	trRes.Transfer.TransferID, err = res.LastInsertId()
-	if err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-	err = tx.QueryRow(
-		"SELECT timestamp FROM transfer WHERE transfer_id=$1",
-		trRes.Transfer.TransferID,
-	).Scan(&trRes.Transfer.Timestamp)
+	trRes.TransferID, err = res.LastInsertId()
 	if err != nil {
 		tx.Rollback()
 		return nil, err
@@ -285,14 +280,16 @@ func (s *Store) DeleteAccount(accountID int64) error {
 }
 
 // GetTransfersHistory retunrs array of transcations for the requested period of time
-func (s *Store) GetTransfersHistory(accountID int64) ([]models.Transfer, error) {
+func (s *Store) GetTransfersHistory(req *models.TransferHisotoryRequest) ([]models.Transfer, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.queryTimeout)
 	defer cancel()
 
 	row, err := s.db.QueryContext(
 		ctx,
-		"SELECT * FROM transfer WHERE from_account_id=$1 OR to_account_id=$1",
-		accountID,
+		fmt.Sprintf(`SELECT * FROM transfer WHERE 
+		timestamp >= date('now', '-%v day') AND 
+		(from_account_id=$1 OR to_account_id=$1)`, req.NDays),
+		req.AccountID,
 	)
 	if err != nil {
 		return nil, err

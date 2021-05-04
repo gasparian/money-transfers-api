@@ -3,8 +3,13 @@ package sqlstore
 import (
 	"errors"
 	"github.com/gasparian/money-transfers-api/internal/app/models"
+	"math"
 	"os"
 	"testing"
+)
+
+const (
+	tol = 1e-4
 )
 
 var (
@@ -31,7 +36,7 @@ func TestStore(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		}
-		if balance != acc.Balance {
+		if math.Abs(balance-acc.Balance) > tol {
 			t.Error(invalidBalanceValueErr)
 		}
 	})
@@ -71,10 +76,11 @@ func TestStore(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		}
-		if !(transferInfo.FromAccountIDBalance < 11 && transferInfo.ToAccountIDBalance > 99) {
+		if math.Abs(transferInfo.FromAccountIDBalance-10) > tol ||
+			math.Abs(transferInfo.ToAccountIDBalance-100) > tol {
 			t.Error(transferCorruptedErr)
 		}
-		t.Log("New transfer Id: ", transferInfo.Transfer.TransferID)
+		t.Log("New transfer Id: ", transferInfo.TransferID)
 	})
 
 	t.Run("TransferNegative", func(t *testing.T) {
@@ -116,7 +122,7 @@ func TestStore(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		}
-		if balance < tr.Amount {
+		if math.Abs(balance-tr.Amount) > tol {
 			t.Error(invalidBalanceValueErr)
 		}
 	})
@@ -139,7 +145,7 @@ func TestStore(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		}
-		if balance > 1.0 {
+		if balance > tol {
 			t.Error(invalidBalanceValueErr)
 		}
 	})
@@ -153,13 +159,18 @@ func TestStore(t *testing.T) {
 		tr := &models.Transfer{
 			FromAccountID: acc.AccountID,
 			ToAccountID:   acc.AccountID,
-			Amount:        42.42,
+			Amount:        42.5,
 		}
 		store.Deposit(tr)
 		store.Deposit(tr)
 		store.Withdraw(tr)
 
-		transfers, err := store.GetTransfersHistory(acc.AccountID)
+		balance, _ := store.GetBalance(acc.AccountID)
+
+		transfers, err := store.GetTransfersHistory(&models.TransferHisotoryRequest{
+			AccountID: acc.AccountID,
+			NDays:     1,
+		})
 		if err != nil {
 			t.Error(err)
 		}
@@ -170,7 +181,7 @@ func TestStore(t *testing.T) {
 		for _, transfer := range transfers {
 			summ += transfer.Amount
 		}
-		if summ < 42 {
+		if (summ - balance) > tol {
 			t.Error(transferCorruptedErr)
 		}
 	})
@@ -210,15 +221,15 @@ func TestStoreConcurrentTransfer(t *testing.T) {
 		}()
 	}
 
-	balance, _ := store.GetBalance(accFrom.AccountID)
-	if (accFrom.Balance - float64(n*2) - balance) > 1e-3 {
-		t.Fatal(invalidBalanceValueErr)
-	}
-
 	for i := 0; i < n; i++ {
 		err := <-errs
 		if err != nil {
 			t.Error(err)
 		}
+	}
+
+	balance, _ := store.GetBalance(accFrom.AccountID)
+	if math.Abs(accFrom.Balance-float64(n*2)-balance) > tol {
+		t.Fatal(invalidBalanceValueErr)
 	}
 }
