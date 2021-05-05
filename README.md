@@ -17,7 +17,7 @@ Then you can build and test the project:
 ```
 make && make test
 ```  
-To build the static binary (~12Mb):  
+To build the static binary for linux (~12Mb):  
 ```
 make build-static
 ```  
