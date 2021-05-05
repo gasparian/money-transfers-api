@@ -1,6 +1,7 @@
-.PHONY: build
+TEST=go test -v -cover -race -count=1 -timeout 30s $(1)
 
 .SILENT:
+.PHONY: build
 build:
 	go build -v ./cmd/apiserver
 
@@ -9,7 +10,7 @@ build-static:
 
 .PHONY: test
 test:
-	go test -v -cover -race -count=1 -timeout 30s ./internal/app/apiserver/...
-	go test -v -cover -race -count=1 -timeout 30s ./internal/app/store/sqlstore/...
+	$(call TEST,./internal/app/apiserver/...)
+	$(call TEST,./internal/app/store/sqlstore/...)
 
 .DEFAULT_GOAL := build

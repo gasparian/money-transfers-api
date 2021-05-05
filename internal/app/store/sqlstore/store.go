@@ -3,11 +3,17 @@ package sqlstore
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gasparian/money-transfers-api/internal/app/models"
 	_ "github.com/mattn/go-sqlite3"
+)
+
+var (
+	accountsArrayEmptyErr = errors.New("Accounts array is empty")
 )
 
 // Store object holds db instance
@@ -109,7 +115,7 @@ func (s *Store) dropTable(tableName string) error {
 // InsertAccount inserts new account into the accounts table and returns row's id
 func (s *Store) InsertAccount(acc *models.Account) error {
 	res, err := s.db.Exec(
-		"INSERT INTO account(balance) VALUES ($1)",
+		"INSERT INTO account(balance) VALUES (?)",
 		acc.Balance,
 	)
 	if err != nil {
@@ -130,13 +136,41 @@ func (s *Store) GetBalance(accountID int64) (float64, error) {
 	var balance float64
 	err := s.db.QueryRowContext(
 		ctx,
-		"SELECT balance FROM account WHERE account_id=$1",
+		"SELECT balance FROM account WHERE account_id=?",
 		accountID,
 	).Scan(&balance)
 	if err != nil {
 		return balance, err
 	}
 	return balance, nil
+}
+
+func getAccountsTx(tx *sql.Tx, accounts []int64) (map[int64]float64, error) {
+	if len(accounts) == 0 {
+		return nil, accountsArrayEmptyErr
+	}
+	args := make([]interface{}, len(accounts))
+	for i, acc := range accounts {
+		args[i] = acc
+	}
+	query := "SELECT * FROM account WHERE account_id IN (?" + strings.Repeat(",?", len(args)-1) + ")"
+	row, err := tx.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer row.Close()
+
+	res := make(map[int64]float64)
+	for row.Next() {
+		var accID int64
+		var balance float64
+		row.Scan(
+			&accID,
+			&balance,
+		)
+		res[accID] = balance
+	}
+	return res, nil
 }
 
 // Deposit adds money to the account
@@ -149,7 +183,7 @@ func (s *Store) Deposit(tr *models.Transfer) (float64, error) {
 		return 0, err
 	}
 	_, err = tx.Exec(
-		"UPDATE account SET balance = balance + $1 WHERE account_id=$2",
+		"UPDATE account SET balance = balance + ? WHERE account_id=?",
 		tr.Amount,
 		tr.ToAccountID,
 	)
@@ -158,7 +192,7 @@ func (s *Store) Deposit(tr *models.Transfer) (float64, error) {
 		return 0, err
 	}
 	_, err = tx.Exec(
-		"INSERT INTO transfer(from_account_id, to_account_id, amount) VALUES (0, $1, $2)",
+		"INSERT INTO transfer(from_account_id, to_account_id, amount) VALUES (0, ?, ?)",
 		tr.ToAccountID,
 		tr.Amount,
 	)
@@ -166,15 +200,12 @@ func (s *Store) Deposit(tr *models.Transfer) (float64, error) {
 		tx.Rollback()
 		return 0, err
 	}
-	var balance float64
-	err = tx.QueryRow(
-		"SELECT balance FROM account WHERE account_id=$1",
-		tr.ToAccountID,
-	).Scan(&balance)
+	accs, err := getAccountsTx(tx, []int64{tr.ToAccountID})
 	if err != nil {
 		tx.Rollback()
 		return 0, err
 	}
+	balance := accs[tr.ToAccountID]
 	tx.Commit()
 	return balance, nil
 }
@@ -189,7 +220,7 @@ func (s *Store) Withdraw(tr *models.Transfer) (float64, error) {
 		return 0, err
 	}
 	_, err = tx.Exec(
-		"UPDATE account SET balance = balance + $1 WHERE account_id=$2",
+		"UPDATE account SET balance = balance + ? WHERE account_id=?",
 		-tr.Amount,
 		tr.FromAccountID,
 	)
@@ -198,7 +229,7 @@ func (s *Store) Withdraw(tr *models.Transfer) (float64, error) {
 		return 0, err
 	}
 	_, err = tx.Exec(
-		"INSERT INTO transfer(from_account_id, to_account_id, amount) VALUES ($1, 0, $2)",
+		"INSERT INTO transfer(from_account_id, to_account_id, amount) VALUES (?, 0, ?)",
 		tr.FromAccountID,
 		tr.Amount,
 	)
@@ -206,16 +237,13 @@ func (s *Store) Withdraw(tr *models.Transfer) (float64, error) {
 		tx.Rollback()
 		return 0, err
 	}
-	var balance float64
-	err = tx.QueryRow(
-		"SELECT balance FROM account WHERE account_id=$1",
-		tr.FromAccountID,
-	).Scan(&balance)
+	accs, err := getAccountsTx(tx, []int64{tr.FromAccountID})
 	if err != nil {
 		tx.Rollback()
 		return 0, err
 	}
 	tx.Commit()
+	balance := accs[tr.FromAccountID]
 	return balance, nil
 }
 
@@ -233,7 +261,7 @@ func (s *Store) Transfer(tr *models.Transfer) (*models.TransferResult, error) {
 		ToAccountID:   tr.ToAccountID,
 	}
 	_, err = tx.Exec(
-		"UPDATE account SET balance = balance + $1 WHERE account_id=$2",
+		"UPDATE account SET balance = balance + ? WHERE account_id=?",
 		-tr.Amount,
 		tr.FromAccountID,
 	)
@@ -242,7 +270,7 @@ func (s *Store) Transfer(tr *models.Transfer) (*models.TransferResult, error) {
 		return nil, err
 	}
 	_, err = tx.Exec(
-		"UPDATE account SET balance = balance + $1 WHERE account_id=$2",
+		"UPDATE account SET balance = balance + ? WHERE account_id=?",
 		tr.Amount,
 		tr.ToAccountID,
 	)
@@ -251,7 +279,7 @@ func (s *Store) Transfer(tr *models.Transfer) (*models.TransferResult, error) {
 		return nil, err
 	}
 	res, err := tx.Exec(
-		"INSERT INTO transfer(from_account_id, to_account_id, amount) VALUES ($1, $2, $3)",
+		"INSERT INTO transfer(from_account_id, to_account_id, amount) VALUES (?, ?, ?)",
 		tr.FromAccountID,
 		tr.ToAccountID,
 		tr.Amount,
@@ -265,30 +293,21 @@ func (s *Store) Transfer(tr *models.Transfer) (*models.TransferResult, error) {
 		tx.Rollback()
 		return nil, err
 	}
-	err = tx.QueryRow(
-		"SELECT balance FROM account WHERE account_id=$1",
-		tr.FromAccountID,
-	).Scan(&trRes.FromAccountIDBalance)
-	if err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-	err = tx.QueryRow(
-		"SELECT balance FROM account WHERE account_id=$1",
-		tr.ToAccountID,
-	).Scan(&trRes.ToAccountIDBalance)
+	accs, err := getAccountsTx(tx, []int64{trRes.ToAccountID, trRes.FromAccountID})
 	if err != nil {
 		tx.Rollback()
 		return nil, err
 	}
 	tx.Commit()
+	trRes.ToAccountIDBalance = accs[trRes.ToAccountID]
+	trRes.FromAccountIDBalance = accs[trRes.FromAccountID]
 	return &trRes, nil
 }
 
 // DeleteAccount removes account from the accounts table
 func (s *Store) DeleteAccount(accountID int64) error {
 	_, err := s.db.Exec(
-		"DELETE FROM account WHERE account_id=$1",
+		"DELETE FROM account WHERE account_id=?",
 		accountID,
 	)
 	if err != nil {
