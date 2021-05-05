@@ -257,8 +257,8 @@ func (s *Store) Transfer(tr *models.Transfer) (*models.TransferResult, error) {
 		return nil, err
 	}
 	trRes := models.TransferResult{
-		FromAccountID: tr.FromAccountID,
-		ToAccountID:   tr.ToAccountID,
+		ToAccount:   &models.Account{AccountID: tr.ToAccountID},
+		FromAccount: &models.Account{AccountID: tr.FromAccountID},
 	}
 	_, err = tx.Exec(
 		"UPDATE account SET balance = balance + ? WHERE account_id=?",
@@ -293,14 +293,14 @@ func (s *Store) Transfer(tr *models.Transfer) (*models.TransferResult, error) {
 		tx.Rollback()
 		return nil, err
 	}
-	accs, err := getAccountsTx(tx, []int64{trRes.ToAccountID, trRes.FromAccountID})
+	accs, err := getAccountsTx(tx, []int64{trRes.ToAccount.AccountID, trRes.FromAccount.AccountID})
 	if err != nil {
 		tx.Rollback()
 		return nil, err
 	}
 	tx.Commit()
-	trRes.ToAccountIDBalance = accs[trRes.ToAccountID]
-	trRes.FromAccountIDBalance = accs[trRes.FromAccountID]
+	trRes.ToAccount.Balance = accs[trRes.ToAccount.AccountID]
+	trRes.FromAccount.Balance = accs[trRes.FromAccount.AccountID]
 	return &trRes, nil
 }
 

@@ -76,8 +76,8 @@ func TestStore(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		}
-		if math.Abs(transferInfo.FromAccountIDBalance-10) > tol ||
-			math.Abs(transferInfo.ToAccountIDBalance-100) > tol {
+		if math.Abs(transferInfo.FromAccount.Balance-10) > tol ||
+			math.Abs(transferInfo.ToAccount.Balance-100) > tol {
 			t.Error(transferCorruptedErr)
 		}
 		t.Log("New transfer Id: ", transferInfo.TransferID)

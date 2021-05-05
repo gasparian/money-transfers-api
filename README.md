@@ -41,8 +41,8 @@ After a successful build, you only have to run binary to start the server:
    - Returns account structure filled with created `id`: 
      ```
      {
-         "account_id":1,
-         "balance":100
+        "account_id":1,
+        "balance":100
      }  
  - `POST /delete-account`:  
    - Gets `account_id`: 
@@ -62,8 +62,8 @@ After a successful build, you only have to run binary to start the server:
    - Returns account with the current balance value:  
      ```
      {
-         "account_id":2,
-         "balance":100
+        "account_id":2,
+        "balance":100
      }  
  - `POST /deposit`:  
    - Gets `account_id` and `amount` of money to deposit: 
@@ -75,8 +75,8 @@ After a successful build, you only have to run binary to start the server:
    - Returns account with the new balance value:  
      ```
      {
-         "account_id":2,
-         "balance":200
+        "account_id":2,
+        "balance":200
      }  
  - `POST /withdraw`:  
    - Gets `account_id` and `amount` of money to pull: 
@@ -88,47 +88,53 @@ After a successful build, you only have to run binary to start the server:
    - Returns account with the new balance value:  
      ```
      {
-         "account_id":2,
-         "balance":100
+        "account_id":2,
+        "balance":100
      }  
  - `POST /transfer`:  
    - Gets two `account_id` values and `amount` of money to transfer: 
      ```
      curl -v -X POST \
          -H "Content-Type: application/json" \
-         --data '{"from_account_id": 3, "to_account_id": 2, "amount": 50}' \
+         --data '{"from_account_id": 1, "to_account_id": 2, "amount": 50}' \
          http://localhost:8010/transfer
    - Returns accounts with the new balance values:  
      ```
      {
-         "from_account_id":3,
-         "to_account_id":2,
-         "from_account_id_balance":50,
-         "to_account_id_balance":250,
-         "transfer_id":2
-     }  
+        "to_account":
+          {
+            "account_id":2,
+            "balance":150
+          },
+        "from_account":
+          {
+            "account_id":1,
+            "balance":200
+          },
+        "transfer_id":4
+     }
  - `POST /get-transfers`:  
    - Gets `account_id` and `n_days` period to query transfers log: 
      ```
      curl -v -X POST \
          -H "Content-Type: application/json" \
-         --data '{"account_id": 2, "n_days": 1}' \
+         --data '{"account_id": 1, "n_days": 1}' \
          http://localhost:8010/get-transfers
    - Returns accounts with the new balance values:  
      ```
      [
-         {
-             "transfer_id":1,
-             "timestamp":"2021-05-04T18:36:12Z",
-             "from_account_id":0,
-             "to_account_id":2,
-             "amount":100
-         },
-         {
-             "transfer_id":2,
-             "timestamp":"2021-05-04T18:40:35Z",
-             "from_account_id":3,
-             "to_account_id":2,
-             "amount":50
-         },
+        {
+          "transfer_id":1,
+          "timestamp":"2021-05-04T18:36:12Z",
+          "from_account_id":0,
+          "to_account_id":2,
+          "amount":100
+        },
+        {
+          "transfer_id":2,
+          "timestamp":"2021-05-04T18:40:35Z",
+          "from_account_id":3,
+          "to_account_id":2,
+          "amount":50
+        },
      ]

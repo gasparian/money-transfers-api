@@ -177,7 +177,7 @@ func TestAPIServer(t *testing.T) {
 		if err := json.NewDecoder(rec.Body).Decode(&transferInfo); err != nil {
 			t.Error(err)
 		}
-		if transferInfo.ToAccountIDBalance <= transferInfo.FromAccountIDBalance {
+		if transferInfo.ToAccount.Balance <= transferInfo.FromAccount.Balance {
 			t.Error(wrongAnswerErr)
 		}
 	})
