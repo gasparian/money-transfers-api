@@ -9,7 +9,7 @@ First, install dependencies:
 ```
 go get ./...
 ```  
-Here I'm using only two libs:  
+Here I'm using only two dependencies:  
  - [toml](https://github.com/BurntSushi/toml) - for parsing the config file;  
  - [sqlite3](https://github.com/mattn/go-sqlite3) - as the embedded database;  
 
