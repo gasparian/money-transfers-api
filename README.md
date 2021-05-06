@@ -120,7 +120,7 @@ After a successful build, you only have to run binary to start the server:
          -H "Content-Type: application/json" \
          --data '{"account_id": 1, "n_days": 1}' \
          http://localhost:8010/get-transfers
-   - Returns accounts with the new balance values:  
+   - Returns list of transfers for the requested account:  
      ```
      [
         {
