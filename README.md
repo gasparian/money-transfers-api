@@ -118,7 +118,7 @@ After a successful build, you only have to run binary to start the server:
      ```
      curl -v -X POST \
          -H "Content-Type: application/json" \
-         --data '{"account_id": 1, "n_days": 1}' \
+         --data '{"account_id": 2, "n_days": 1}' \
          http://localhost:8010/get-transfers
    - Returns list of transfers for the requested account:  
      ```
