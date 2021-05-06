@@ -27,16 +27,17 @@ func TestStore(t *testing.T) {
 	defer os.RemoveAll(dbPath)
 
 	t.Run("InsertAccount", func(t *testing.T) {
-		acc := &models.Account{Balance: 10}
+		var initBalance float64 = 10
+		acc := &models.Account{Balance: initBalance}
 		err := store.InsertAccount(acc)
 		if err != nil {
 			t.Fatal(err)
 		}
-		balance, err := store.GetBalance(acc.AccountID)
+		err = store.GetBalance(acc)
 		if err != nil {
 			t.Error(err)
 		}
-		if math.Abs(balance-acc.Balance) > tol {
+		if math.Abs(initBalance-acc.Balance) > tol {
 			t.Error(invalidBalanceValueErr)
 		}
 	})
@@ -47,11 +48,11 @@ func TestStore(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		err = store.DeleteAccount(acc.AccountID)
+		err = store.DeleteAccount(acc)
 		if err != nil {
 			t.Error(err)
 		}
-		_, err = store.GetBalance(acc.AccountID)
+		err = store.GetBalance(acc)
 		if err == nil {
 			t.Error(invalidBalanceValueErr)
 		}
@@ -114,11 +115,11 @@ func TestStore(t *testing.T) {
 			ToAccountID: acc.AccountID,
 			Amount:      42.42,
 		}
-		balance, err := store.Deposit(tr)
+		accUpdated, err := store.Deposit(tr)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if math.Abs(balance-tr.Amount) > tol {
+		if math.Abs(accUpdated.Balance-tr.Amount) > tol {
 			t.Error(invalidBalanceValueErr)
 		}
 	})
@@ -133,17 +134,18 @@ func TestStore(t *testing.T) {
 			FromAccountID: acc.AccountID,
 			Amount:        100,
 		}
-		balance, err := store.Withdraw(tr)
+		accUpdated, err := store.Withdraw(tr)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if balance > tol {
+		if accUpdated.Balance > tol {
 			t.Error(invalidBalanceValueErr)
 		}
 	})
 
 	t.Run("GetTransfers", func(t *testing.T) {
-		acc := &models.Account{Balance: 100}
+		var initBalance float64 = 100
+		acc := &models.Account{Balance: initBalance}
 		err := store.InsertAccount(acc)
 		if err != nil {
 			t.Fatal(err)
@@ -157,7 +159,7 @@ func TestStore(t *testing.T) {
 		store.Deposit(tr)
 		store.Withdraw(tr)
 
-		balance, _ := store.GetBalance(acc.AccountID)
+		store.GetBalance(acc)
 
 		transfers, err := store.GetTransfersHistory(&models.TransferHisotoryRequest{
 			AccountID: acc.AccountID,
@@ -173,7 +175,7 @@ func TestStore(t *testing.T) {
 		for _, transfer := range transfers {
 			summ += transfer.Amount
 		}
-		if (summ - balance) > tol {
+		if (summ - acc.Balance) > tol {
 			t.Error(transferCorruptedErr)
 		}
 	})
@@ -195,7 +197,8 @@ func TestStoreConcurrentTransfer(t *testing.T) {
 	defer store.Close()
 	defer os.RemoveAll(dbPath)
 
-	accFrom := &models.Account{Balance: 100}
+	var initBalance float64 = 100
+	accFrom := &models.Account{Balance: initBalance}
 	store.InsertAccount(accFrom)
 	accTo := &models.Account{}
 	store.InsertAccount(accTo)
@@ -220,8 +223,8 @@ func TestStoreConcurrentTransfer(t *testing.T) {
 		}
 	}
 
-	balance, _ := store.GetBalance(accFrom.AccountID)
-	if math.Abs(accFrom.Balance-float64(n*2)-balance) > tol {
+	store.GetBalance(accFrom)
+	if math.Abs(initBalance-float64(n*2)-accFrom.Balance) > tol {
 		t.Fatal(invalidBalanceValueErr)
 	}
 }

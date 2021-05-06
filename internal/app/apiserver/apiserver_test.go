@@ -76,7 +76,7 @@ func TestAPIServer(t *testing.T) {
 		if rec.Code != 200 {
 			t.Error(badStatusCodeErr)
 		}
-		_, err = store.GetBalance(acc.AccountID)
+		err = store.GetBalance(&acc)
 		if err == nil {
 			t.Error()
 		}
@@ -84,7 +84,8 @@ func TestAPIServer(t *testing.T) {
 
 	t.Run("GetBalance", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		acc := models.Account{Balance: 100}
+		var initBalance float64 = 100
+		acc := models.Account{Balance: initBalance}
 		store.InsertAccount(&acc)
 		b, err := json.Marshal(acc)
 		if err != nil {
@@ -98,7 +99,7 @@ func TestAPIServer(t *testing.T) {
 		if err := json.NewDecoder(rec.Body).Decode(&acc); err != nil {
 			t.Error(err)
 		}
-		if math.Abs(acc.Balance-100) > tol {
+		if math.Abs(acc.Balance-initBalance) > tol {
 			t.Error(wrongAnswerErr)
 		}
 	})

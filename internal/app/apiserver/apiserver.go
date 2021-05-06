@@ -114,7 +114,7 @@ func (s *APIServer) handleDeleteAccount() http.HandlerFunc {
 				if err != nil {
 					return err
 				}
-				err = s.store.DeleteAccount(acc.AccountID)
+				err = s.store.DeleteAccount(&acc)
 				if err != nil {
 					return err
 				}
@@ -135,7 +135,7 @@ func (s *APIServer) handleGetBalance() http.HandlerFunc {
 				if err != nil {
 					return err
 				}
-				acc.Balance, err = s.store.GetBalance(acc.AccountID)
+				err = s.store.GetBalance(&acc)
 				if err != nil {
 					return err
 				}
@@ -157,13 +157,9 @@ func (s *APIServer) handleDeposit() http.HandlerFunc {
 				if err != nil {
 					return err
 				}
-				balance, err := s.store.Deposit(&tr)
+				acc, err := s.store.Deposit(&tr)
 				if err != nil {
 					return err
-				}
-				acc := models.Account{
-					AccountID: tr.ToAccountID,
-					Balance:   balance,
 				}
 				w.WriteHeader(http.StatusOK)
 				json.NewEncoder(w).Encode(acc)
@@ -183,13 +179,9 @@ func (s *APIServer) handleWithdraw() http.HandlerFunc {
 				if err != nil {
 					return err
 				}
-				balance, err := s.store.Withdraw(&tr)
+				acc, err := s.store.Withdraw(&tr)
 				if err != nil {
 					return err
-				}
-				acc := models.Account{
-					AccountID: tr.FromAccountID,
-					Balance:   balance,
 				}
 				w.WriteHeader(http.StatusOK)
 				json.NewEncoder(w).Encode(acc)
