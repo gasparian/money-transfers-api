@@ -78,7 +78,7 @@ func (s *Store) createTransfersTable() error {
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS transfer (
 	    	transfer_id INTEGER NOT NULL PRIMARY KEY,
-	    	timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+	    	timestamp TIMESTAMP DEFAULT(STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW')),
 	    	from_account_id INTEGER,
 	    	to_account_id INTEGER,
 	    	amount REAL CHECK(amount > 0.0)

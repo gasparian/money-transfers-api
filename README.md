@@ -123,18 +123,25 @@ After a successful build, you only have to run binary to start the server:
    - Returns list of transfers for the requested account:  
      ```
      [
-        {
-          "transfer_id":1,
-          "timestamp":"2021-05-04T18:36:12Z",
-          "from_account_id":0,
-          "to_account_id":2,
-          "amount":100
-        },
-        {
-          "transfer_id":2,
-          "timestamp":"2021-05-04T18:40:35Z",
-          "from_account_id":3,
-          "to_account_id":2,
-          "amount":50
-        },
+       {
+         "transfer_id":3,
+         "timestamp":"2021-05-06T17:39:44.357Z",
+         "from_account_id":2,
+         "to_account_id":0,
+         "amount":100
+       },
+       {
+         "transfer_id":1,
+         "timestamp":"2021-05-06T17:39:04.884Z",
+         "from_account_id":1,
+         "to_account_id":2,
+         "amount":50
+       },
+       {
+         "transfer_id":2,
+         "timestamp":"2021-05-06T17:39:28.934Z",
+         "from_account_id":0,
+         "to_account_id":2,
+         "amount":100
+       }
      ]
