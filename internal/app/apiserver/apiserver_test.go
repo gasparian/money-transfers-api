@@ -4,23 +4,28 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/gasparian/money-transfers-api/internal/app/models"
 	"github.com/gasparian/money-transfers-api/internal/app/store/sqlstore"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
 )
 
-const (
-	tol = 1e-4
+var (
+	badStatusCodeErr     = errors.New("Bad status code")
+	wrongAnswerErr       = errors.New("Wrong answer")
+	accountNotDeletedErr = errors.New("Account has not been deleted")
 )
 
-var (
-	badStatusCodeErr = errors.New("Bad status code")
-	wrongAnswerErr   = errors.New("Wrong answer")
-)
+func addQueryParams(req *http.Request, params map[string]string) {
+	q := req.URL.Query()
+	for k, v := range params {
+		q.Add(k, v)
+	}
+	req.URL.RawQuery = q.Encode()
+}
 
 func TestAPIServer(t *testing.T) {
 	dbPath := "/tmp/tets.db"
@@ -45,178 +50,145 @@ func TestAPIServer(t *testing.T) {
 
 	t.Run("CreateAccount", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		acc := models.Account{Balance: 100}
-		b, err := json.Marshal(acc)
+		initBalance := MoneyAmountJsonView{Integer: 100}
+		b, err := json.Marshal(initBalance)
 		if err != nil {
 			t.Fatal(err)
 		}
-		req, _ := http.NewRequest(http.MethodPost, "/create-account", bytes.NewBuffer(b))
-		s.handleCreateAccount().ServeHTTP(rec, req)
-		if rec.Code != 200 {
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/accounts", bytes.NewBuffer(b))
+		s.handleAccounts().ServeHTTP(rec, req)
+		if rec.Code > 204 {
 			t.Error(badStatusCodeErr)
 		}
-		if err := json.NewDecoder(rec.Body).Decode(&acc); err != nil {
+		accId := AccountIDJsonView{}
+		if err := json.NewDecoder(rec.Body).Decode(&accId); err != nil {
 			t.Error(err)
 		}
-		if acc.AccountID == 0 {
+		if accId.ID == 0 {
 			t.Error(wrongAnswerErr)
 		}
 	})
 
 	t.Run("DeleteAccount", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		acc := models.Account{}
-		store.InsertAccount(&acc)
-		b, err := json.Marshal(acc)
+		acc, err := store.InsertAccount(models.MoneyAmount{Integer: 100})
 		if err != nil {
 			t.Fatal(err)
 		}
-		req, _ := http.NewRequest(http.MethodPost, "/delete-account", bytes.NewBuffer(b))
-		s.handleDeleteAccount().ServeHTTP(rec, req)
-		if rec.Code != 200 {
+		req, _ := http.NewRequest(http.MethodDelete, "/api/v1/accounts", nil)
+		addQueryParams(req, map[string]string{
+			"account_id": fmt.Sprintf("%v", acc.AccountID),
+		})
+		s.handleAccounts().ServeHTTP(rec, req)
+		if rec.Code > 204 {
 			t.Error(badStatusCodeErr)
 		}
-		err = store.GetBalance(&acc)
+		_, err = store.GetAccount(acc.AccountID)
 		if err == nil {
-			t.Error()
+			t.Error(accountNotDeletedErr)
 		}
 	})
 
-	t.Run("GetBalance", func(t *testing.T) {
+	t.Run("GetAccount", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		var initBalance float64 = 100
-		acc := models.Account{Balance: initBalance}
-		store.InsertAccount(&acc)
-		b, err := json.Marshal(acc)
+		initBalance := models.MoneyAmount{Integer: 100}
+		acc, err := store.InsertAccount(initBalance)
 		if err != nil {
 			t.Fatal(err)
 		}
-		req, _ := http.NewRequest(http.MethodPost, "/get-balance", bytes.NewBuffer(b))
-		s.handleGetBalance().ServeHTTP(rec, req)
-		if rec.Code != 200 {
+		req, _ := http.NewRequest(http.MethodGet, "/api/v1/accounts", nil)
+		addQueryParams(req, map[string]string{
+			"account_id": fmt.Sprintf("%v", acc.AccountID),
+		})
+		s.handleAccounts().ServeHTTP(rec, req)
+		if rec.Code > 204 {
 			t.Error(badStatusCodeErr)
 		}
 		if err := json.NewDecoder(rec.Body).Decode(&acc); err != nil {
 			t.Error(err)
 		}
-		if math.Abs(acc.Balance-initBalance) > tol {
-			t.Error(wrongAnswerErr)
-		}
-	})
-
-	t.Run("Deposit", func(t *testing.T) {
-		rec := httptest.NewRecorder()
-		accTo := models.Account{}
-		store.InsertAccount(&accTo)
-		tr := models.Transfer{
-			ToAccountID: accTo.AccountID,
-			Amount:      100,
-		}
-		b, err := json.Marshal(tr)
-		if err != nil {
-			t.Fatal(err)
-		}
-		req, _ := http.NewRequest(http.MethodPost, "/deposit", bytes.NewBuffer(b))
-		s.handleDeposit().ServeHTTP(rec, req)
-		if rec.Code != 200 {
-			t.Error(badStatusCodeErr)
-		}
-		if err := json.NewDecoder(rec.Body).Decode(&accTo); err != nil {
-			t.Error(err)
-		}
-		if math.Abs(accTo.Balance-100) > tol {
-			t.Error(wrongAnswerErr)
-		}
-	})
-
-	t.Run("Withdraw", func(t *testing.T) {
-		rec := httptest.NewRecorder()
-		accFrom := models.Account{Balance: 100}
-		store.InsertAccount(&accFrom)
-		tr := models.Transfer{
-			FromAccountID: accFrom.AccountID,
-			Amount:        100,
-		}
-		b, err := json.Marshal(tr)
-		if err != nil {
-			t.Fatal(err)
-		}
-		req, _ := http.NewRequest(http.MethodPost, "/withdraw", bytes.NewBuffer(b))
-		s.handleWithdraw().ServeHTTP(rec, req)
-		if rec.Code != 200 {
-			t.Error(badStatusCodeErr)
-		}
-		if err := json.NewDecoder(rec.Body).Decode(&accFrom); err != nil {
-			t.Error(err)
-		}
-		if accFrom.Balance > tol {
+		if models.CompareMoney(&acc.Balance, &initBalance) != 0 {
 			t.Error(wrongAnswerErr)
 		}
 	})
 
 	t.Run("Transfer", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		accFrom := models.Account{Balance: 100}
-		store.InsertAccount(&accFrom)
-		accTo := models.Account{}
-		store.InsertAccount(&accTo)
-		tr := models.Transfer{
+		accFromInitBalance := models.MoneyAmount{Integer: 100}
+		accFrom, err := store.InsertAccount(accFromInitBalance)
+		if err != nil {
+			t.Fatal(err)
+		}
+		accToInitBalance := models.MoneyAmount{}
+		accTo, err := store.InsertAccount(accToInitBalance)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tr := TransactionJsonView{
 			FromAccountID: accFrom.AccountID,
 			ToAccountID:   accTo.AccountID,
-			Amount:        100,
+			Amount:        MoneyAmountJsonView(accFromInitBalance),
 		}
 		b, err := json.Marshal(tr)
 		if err != nil {
 			t.Fatal(err)
 		}
-		req, _ := http.NewRequest(http.MethodPost, "/transfer", bytes.NewBuffer(b))
-		s.handleTransfer().ServeHTTP(rec, req)
-		if rec.Code != 200 {
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/transfer-money", bytes.NewBuffer(b))
+		s.handleTransferMoney().ServeHTTP(rec, req)
+		if rec.Code > 204 {
 			t.Error(badStatusCodeErr)
 		}
-		var transferInfo models.TransferResult
-		if err := json.NewDecoder(rec.Body).Decode(&transferInfo); err != nil {
-			t.Error(err)
-		}
-		if transferInfo.ToAccount.Balance <= transferInfo.FromAccount.Balance {
+		accFromNew, _ := store.GetAccount(accFrom.AccountID)
+		accToNew, _ := store.GetAccount(accTo.AccountID)
+		if models.CompareMoney(&accFromNew.Balance, &accFromInitBalance) >= 0 &&
+			models.CompareMoney(&accToNew.Balance, &accToInitBalance) <= 0 &&
+			models.CompareMoney(&accFromNew.Balance, &accToNew.Balance) >= 0 {
 			t.Error(wrongAnswerErr)
 		}
 	})
 
-	t.Run("GetTransfers", func(t *testing.T) {
+	t.Run("GetTransactions", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		acc := models.Account{}
-		store.InsertAccount(&acc)
-		store.Deposit(&models.Transfer{
-			ToAccountID: acc.AccountID,
-			Amount:      10,
-		})
-		store.Deposit(&models.Transfer{
-			ToAccountID: acc.AccountID,
-			Amount:      10,
-		})
-		store.Withdraw(&models.Transfer{
-			FromAccountID: acc.AccountID,
-			Amount:        20,
-		})
-		tr := models.TransferHisotoryRequest{
-			AccountID: acc.AccountID,
-			NDays:     1,
-		}
-		b, err := json.Marshal(tr)
+		accFromInitBalance := models.MoneyAmount{Integer: 100}
+		accFrom, err := store.InsertAccount(accFromInitBalance)
 		if err != nil {
 			t.Fatal(err)
 		}
-		req, _ := http.NewRequest(http.MethodPost, "/get-transfers", bytes.NewBuffer(b))
-		s.handleGetTransfers().ServeHTTP(rec, req)
-		if rec.Code != 200 {
+		accToInitBalance := models.MoneyAmount{}
+		accTo, err := store.InsertAccount(accToInitBalance)
+		if err != nil {
+			t.Fatal(err)
+		}
+		transferMoneyAmount := models.MoneyAmount{Integer: 20}
+		nTransfers := 5
+		for i := 0; i < nTransfers; i++ {
+			store.TransferMoney(
+				accTo.AccountID,
+				accFrom.AccountID,
+				transferMoneyAmount,
+			)
+		}
+
+		req, _ := http.NewRequest(http.MethodGet, "/api/v1/transactions", nil)
+		addQueryParams(req, map[string]string{
+			"account_id":  fmt.Sprintf("%v", accFrom.AccountID),
+			"n_last_days": fmt.Sprintf("%v", 1),
+			"limit":       fmt.Sprintf("%v", 3),
+		})
+		s.handleTransactions().ServeHTTP(rec, req)
+		if rec.Code > 204 {
 			t.Error(badStatusCodeErr)
 		}
-		transfers := make([]models.Transfer, 0)
-		if err := json.NewDecoder(rec.Body).Decode(&transfers); err != nil {
+		transactions := make([]TransactionJsonView, 3)
+		if err := json.NewDecoder(rec.Body).Decode(&transactions); err != nil {
 			t.Error(err)
 		}
-		if len(transfers) != 3 {
+		for _, tr := range transactions {
+			if tr.Amount.Integer != 20 || tr.FromAccountID != accFrom.AccountID {
+				t.Fatal(wrongAnswerErr)
+			}
+		}
+		if len(transactions) != 3 {
 			t.Error(wrongAnswerErr)
 		}
 	})

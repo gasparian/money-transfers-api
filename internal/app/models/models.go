@@ -4,30 +4,64 @@ import (
 	"time"
 )
 
-// Account holds id and amount of money
+// MoneyAmount sum of money represented in two parts
+type MoneyAmount struct {
+	Integer  int64
+	Fraction int64
+}
+
+func AddMoney(from, to, amount *MoneyAmount) {
+	from.Integer -= amount.Integer
+	from.Fraction -= amount.Fraction
+	to.Integer += amount.Integer
+	to.Fraction += amount.Fraction
+}
+
+func CompareMoney(l, r *MoneyAmount) int {
+	if l.Integer > r.Integer {
+		return 1
+	}
+	if l.Integer < r.Integer {
+		return -1
+	}
+	if l.Integer == r.Integer {
+		if l.Fraction > r.Fraction {
+			return 1
+		}
+		if l.Fraction < r.Fraction {
+			return -1
+		}
+	}
+	return 0
+}
+
+func SumMoney(l, r *MoneyAmount) *MoneyAmount {
+	return &MoneyAmount{
+		Integer:  l.Integer + r.Integer,
+		Fraction: l.Fraction + r.Fraction,
+	}
+}
+
+// Account holds info about account that stored in the db
 type Account struct {
-	AccountID int64   `json:"account_id"`
-	Balance   float64 `json:"balance"`
+	CreatedAt time.Time
+	AccountID int64
+	Balance   MoneyAmount
 }
 
-// Transfer holds data needed to perform money transfer
-type Transfer struct {
-	TransferID    int64     `json:"transfer_id"`
-	Timestamp     time.Time `json:"timestamp"`
-	FromAccountID int64     `json:"from_account_id"`
-	ToAccountID   int64     `json:"to_account_id"`
-	Amount        float64   `json:"amount"`
+// IsEqualAccounts ...
+func IsEqualAccounts(l, r *Account) bool {
+	accId := l.AccountID == r.AccountID
+	balance := CompareMoney(&l.Balance, &r.Balance) == 0
+	date := l.CreatedAt == r.CreatedAt
+	return accId && balance && date
 }
 
-// TransferResult hodls data about performed transfer and the new balances
-type TransferResult struct {
-	ToAccount   *Account `json:"to_account"`
-	FromAccount *Account `json:"from_account"`
-	TransferID  int64    `json:"transfer_id"`
-}
-
-// TransferHisotoryRequest holds account id and the number of days to look at the past from now
-type TransferHisotoryRequest struct {
-	AccountID int64 `json:"account_id"`
-	NDays     int64 `json:"n_days"`
+// Transaction holds data needed to perform money transfer
+type Transaction struct {
+	TransactionID int64
+	Timestamp     time.Time
+	FromAccountID int64
+	ToAccountID   int64
+	Amount        MoneyAmount
 }
