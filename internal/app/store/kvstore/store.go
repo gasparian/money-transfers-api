@@ -33,7 +33,7 @@ func New() *KVStore {
 	}
 }
 
-func (s *KVStore) InsertAccount(balance models.MoneyAmount) (models.Account, error) {
+func (s *KVStore) InsertAccount(balance int64) (models.Account, error) {
 	s.mx.Lock()
 	defer s.mx.Unlock()
 
@@ -69,7 +69,7 @@ func (s *KVStore) GetAccount(accId int64) (models.Account, error) {
 	return acc.Account, nil
 }
 
-func (s *KVStore) TransferMoney(accountToId, accountFromId int64, amount models.MoneyAmount) error {
+func (s *KVStore) TransferMoney(accountToId, accountFromId, amount int64) error {
 	s.mx.RLock()
 	accTo, ok := s.accounts[accountToId]
 	if !ok {
@@ -84,7 +84,7 @@ func (s *KVStore) TransferMoney(accountToId, accountFromId int64, amount models.
 	s.mx.RUnlock()
 
 	accFrom.mx.RLock()
-	if models.CompareMoney(&accFrom.Balance, &amount) < 0 {
+	if accFrom.Balance < amount {
 		accFrom.mx.RUnlock()
 		return notEnoghMoneyOnAccErr
 	}
@@ -98,7 +98,8 @@ func (s *KVStore) TransferMoney(accountToId, accountFromId int64, amount models.
 	for _, acc := range accs {
 		acc.mx.Lock()
 	}
-	models.AddMoney(&accFrom.Balance, &accTo.Balance, &amount)
+	accFrom.Balance -= amount
+	accTo.Balance += amount
 	for _, acc := range accs {
 		acc.mx.Unlock()
 	}

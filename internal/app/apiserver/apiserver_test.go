@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/gasparian/money-transfers-api/internal/app/models"
+	// "github.com/gasparian/money-transfers-api/internal/app/models"
 	"github.com/gasparian/money-transfers-api/internal/app/store/sqlstore"
 	"net/http"
 	"net/http/httptest"
@@ -50,7 +50,7 @@ func TestAPIServer(t *testing.T) {
 
 	t.Run("CreateAccount", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		initBalance := MoneyAmountJsonView{Integer: 100}
+		initBalance := AccountJsonView{Balance: 100}
 		b, err := json.Marshal(initBalance)
 		if err != nil {
 			t.Fatal(err)
@@ -71,7 +71,7 @@ func TestAPIServer(t *testing.T) {
 
 	t.Run("DeleteAccount", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		acc, err := store.InsertAccount(models.MoneyAmount{Integer: 100})
+		acc, err := store.InsertAccount(10000)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -91,8 +91,7 @@ func TestAPIServer(t *testing.T) {
 
 	t.Run("GetAccount", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		initBalance := models.MoneyAmount{Integer: 100}
-		acc, err := store.InsertAccount(initBalance)
+		acc, err := store.InsertAccount(10000)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -104,22 +103,23 @@ func TestAPIServer(t *testing.T) {
 		if rec.Code > 204 {
 			t.Error(badStatusCodeErr)
 		}
-		if err := json.NewDecoder(rec.Body).Decode(&acc); err != nil {
+		accRetrieved := AccountJsonView{}
+		if err := json.NewDecoder(rec.Body).Decode(&accRetrieved); err != nil {
 			t.Error(err)
 		}
-		if models.CompareMoney(&acc.Balance, &initBalance) != 0 {
+		if acc.Balance != moneyRealToInt(accRetrieved.Balance) {
 			t.Error(wrongAnswerErr)
 		}
 	})
 
 	t.Run("Transfer", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		accFromInitBalance := models.MoneyAmount{Integer: 100}
+		var accFromInitBalance int64 = 10000
 		accFrom, err := store.InsertAccount(accFromInitBalance)
 		if err != nil {
 			t.Fatal(err)
 		}
-		accToInitBalance := models.MoneyAmount{}
+		var accToInitBalance int64 = 0
 		accTo, err := store.InsertAccount(accToInitBalance)
 		if err != nil {
 			t.Fatal(err)
@@ -127,7 +127,7 @@ func TestAPIServer(t *testing.T) {
 		tr := TransactionJsonView{
 			FromAccountID: accFrom.AccountID,
 			ToAccountID:   accTo.AccountID,
-			Amount:        MoneyAmountJsonView(accFromInitBalance),
+			Amount:        moneyIntToReal(accFromInitBalance),
 		}
 		b, err := json.Marshal(tr)
 		if err != nil {
@@ -140,26 +140,26 @@ func TestAPIServer(t *testing.T) {
 		}
 		accFromNew, _ := store.GetAccount(accFrom.AccountID)
 		accToNew, _ := store.GetAccount(accTo.AccountID)
-		if models.CompareMoney(&accFromNew.Balance, &accFromInitBalance) >= 0 &&
-			models.CompareMoney(&accToNew.Balance, &accToInitBalance) <= 0 &&
-			models.CompareMoney(&accFromNew.Balance, &accToNew.Balance) >= 0 {
+		if accFromNew.Balance >= accFromInitBalance &&
+			accToNew.Balance <= accToInitBalance &&
+			accFromNew.Balance >= accToNew.Balance {
 			t.Error(wrongAnswerErr)
 		}
 	})
 
 	t.Run("GetTransactions", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		accFromInitBalance := models.MoneyAmount{Integer: 100}
+		var accFromInitBalance int64 = 10000
 		accFrom, err := store.InsertAccount(accFromInitBalance)
 		if err != nil {
 			t.Fatal(err)
 		}
-		accToInitBalance := models.MoneyAmount{}
+		var accToInitBalance int64 = 0
 		accTo, err := store.InsertAccount(accToInitBalance)
 		if err != nil {
 			t.Fatal(err)
 		}
-		transferMoneyAmount := models.MoneyAmount{Integer: 20}
+		var transferMoneyAmount int64 = 2000
 		nTransfers := 5
 		for i := 0; i < nTransfers; i++ {
 			store.TransferMoney(
@@ -184,7 +184,7 @@ func TestAPIServer(t *testing.T) {
 			t.Error(err)
 		}
 		for _, tr := range transactions {
-			if tr.Amount.Integer != 20 || tr.FromAccountID != accFrom.AccountID {
+			if moneyRealToInt(tr.Amount) != transferMoneyAmount || tr.FromAccountID != accFrom.AccountID {
 				t.Fatal(wrongAnswerErr)
 			}
 		}

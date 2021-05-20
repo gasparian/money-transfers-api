@@ -35,7 +35,7 @@ After a successful build, you only have to run binary to start the server:
      ```
      curl -v -X POST \
           -H "Content-Type: application/json" \
-          --data '{"integer": 100}' \
+          --data '{"balance": 100}' \
           http://localhost:8010/api/v1/accounts
    - Returns account structure filled with created `id`: 
      ```
@@ -58,19 +58,15 @@ After a successful build, you only have to run binary to start the server:
    - Returns account with the current balance value:  
      ```
      {
-        "account_id":1,
-        "balance":
-          {
-            "integer": 100,
-            "fraction":0,
-          }
+        "account_id": 1,
+        "balance": 100
      }  
  - `POST /api/v1/transfer-money`:  
    - Gets two `account_id` values and `amount` of money to transfer: 
      ```
      curl -v -X POST \
           -H "Content-Type: application/json" \
-          --data '{"from_account_id": 1, "to_account_id": 2, "amount": {"integer": 50, "fraction": 0}}' \
+          --data '{"from_account_id": 1, "to_account_id": 2, "amount": 50}' \
           http://localhost:8010/api/v1/transfer-money
    - Returns 204 status code if the money transfer was successful;  
  - `GET /api/v1/transactions`:  
@@ -88,29 +84,18 @@ After a successful build, you only have to run binary to start the server:
          "timestamp":"2021-05-16T08:56:36.953Z",
          "from_account_id":1,
          "to_account_id":2,
-         "amount":
-           {
-             "integer":50,"fraction":0
-           }
+         "amount":50
        },
        {
          "timestamp":"2021-05-16T09:09:32.396Z",
          "from_account_id":1,
          "to_account_id":2,
-         "amount":
-           {
-             "integer":10,
-             "fraction":0
-           }
+         "amount":10
        },
        {
          "timestamp":"2021-05-16T09:09:34.423Z",
          "from_account_id":1,
          "to_account_id":2,
-         "amount":
-           {
-             "integer":10,
-             "fraction":0
-           }
+         "amount":10
        }
      ]
