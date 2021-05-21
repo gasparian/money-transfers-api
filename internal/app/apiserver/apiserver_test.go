@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"testing"
 )
 
@@ -107,7 +108,7 @@ func TestAPIServer(t *testing.T) {
 		if err := json.NewDecoder(rec.Body).Decode(&acc); err != nil {
 			t.Error(err)
 		}
-		if models.CompareMoney(&acc.Balance, &initBalance) != 0 {
+		if !reflect.DeepEqual(&acc.Balance, &initBalance) {
 			t.Error(wrongAnswerErr)
 		}
 	})

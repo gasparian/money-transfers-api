@@ -49,14 +49,6 @@ type Account struct {
 	Balance   MoneyAmount
 }
 
-// IsEqualAccounts ...
-func IsEqualAccounts(l, r *Account) bool {
-	accId := l.AccountID == r.AccountID
-	balance := CompareMoney(&l.Balance, &r.Balance) == 0
-	date := l.CreatedAt == r.CreatedAt
-	return accId && balance && date
-}
-
 // Transaction holds data needed to perform money transfer
 type Transaction struct {
 	TransactionID int64

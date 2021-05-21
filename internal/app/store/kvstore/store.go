@@ -50,6 +50,13 @@ func (s *KVStore) InsertAccount(balance models.MoneyAmount) (models.Account, err
 }
 
 func (s *KVStore) DeleteAccount(accId int64) error {
+	s.mx.RLock()
+	if _, ok := s.accounts[accId]; !ok {
+		s.mx.RUnlock()
+		return accNotFoundErr
+	}
+	s.mx.RUnlock()
+
 	s.mx.Lock()
 	defer s.mx.Unlock()
 
@@ -123,10 +130,11 @@ func (s *KVStore) GetTransactionsHistory(accountId, nLastdays, limit int64) ([]m
 	limConv := int(limit)
 	nLastdaysConv := int(nLastdays)
 	tr := make([]models.Transaction, 0)
+	refTime := time.Now().AddDate(0, 0, -nLastdaysConv)
 	// NOTE: here I used just run the full scan against all transactions
 	for _, v := range s.transactions {
 		accountIDMatches := v.ToAccountID == accountId || v.FromAccountID == accountId
-		dateMatches := v.Timestamp.After(time.Now().AddDate(0, 0, -nLastdaysConv))
+		dateMatches := v.Timestamp.After(refTime)
 		if accountIDMatches && dateMatches {
 			tr = append(tr, v)
 		}

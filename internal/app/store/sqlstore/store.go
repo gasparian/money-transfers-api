@@ -13,6 +13,7 @@ import (
 
 var (
 	accountsArrayEmptyErr = errors.New("Accounts array is empty")
+	accNotFoundErr        = errors.New("Account not found")
 )
 
 // Store object holds db instance
@@ -160,14 +161,15 @@ func (s *Store) InsertAccount(balance models.MoneyAmount) (models.Account, error
 
 // DeleteAccount removes account from the accounts table
 func (s *Store) DeleteAccount(accId int64) error {
-	_, err := s.db.Exec(
+	res, err := s.db.Exec(
 		"DELETE FROM account WHERE account_id=?",
 		accId,
 	)
-	if err != nil {
-		return err
+	rowsAffected, err := res.RowsAffected()
+	if rowsAffected == 0 {
+		return accNotFoundErr
 	}
-	return nil
+	return err
 }
 
 // GetAccount returns account model

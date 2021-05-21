@@ -7,12 +7,14 @@ import (
 	"github.com/gasparian/money-transfers-api/internal/app/store/kvstore"
 	"github.com/gasparian/money-transfers-api/internal/app/store/sqlstore"
 	"os"
+	"reflect"
 	"testing"
 )
 
 var (
-	invalidBalanceValueErr  = errors.New("Invalid balance value")
-	transactionCorruptedErr = errors.New("Transaction corrupted")
+	invalidBalanceValueErr      = errors.New("Invalid balance value")
+	transactionCorruptedErr     = errors.New("Transaction corrupted")
+	accountDeletionCorruptedErr = errors.New("Account deletion corrupted")
 )
 
 func testStore(store store.Store, t *testing.T) {
@@ -22,7 +24,7 @@ func testStore(store store.Store, t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if models.CompareMoney(&balance, &acc.Balance) != 0 {
+		if !reflect.DeepEqual(&balance, &acc.Balance) {
 			t.Error(invalidBalanceValueErr)
 		}
 	})
@@ -40,6 +42,11 @@ func testStore(store store.Store, t *testing.T) {
 		_, err = store.GetAccount(acc.AccountID)
 		if err == nil {
 			t.Error(invalidBalanceValueErr)
+		}
+
+		err = store.DeleteAccount(100)
+		if err == nil {
+			t.Error(accountDeletionCorruptedErr)
 		}
 	})
 
@@ -68,7 +75,7 @@ func testStore(store store.Store, t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !(models.CompareMoney(&accToNew.Balance, &accFrom.Balance) == 0 && models.CompareMoney(&accFromNew.Balance, &accTo.Balance) == 0) {
+		if !(reflect.DeepEqual(&accToNew.Balance, &accFrom.Balance) && reflect.DeepEqual(&accFromNew.Balance, &accTo.Balance)) {
 			t.Error(transactionCorruptedErr)
 		}
 	})
@@ -139,7 +146,7 @@ func testStore(store store.Store, t *testing.T) {
 			t.Fatal(err)
 		}
 		accFromNew, _ := store.GetAccount(accFrom.AccountID)
-		if models.CompareMoney(&accFrom.Balance, &accToNew.Balance) != 0 || models.CompareMoney(&accTo.Balance, &accFromNew.Balance) != 0 {
+		if !reflect.DeepEqual(&accFrom.Balance, &accToNew.Balance) || !reflect.DeepEqual(&accTo.Balance, &accFromNew.Balance) {
 			t.Error(transactionCorruptedErr)
 		}
 	})
