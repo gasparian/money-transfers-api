@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/gasparian/money-transfers-api/internal/app/models"
@@ -14,6 +13,7 @@ import (
 
 var (
 	accountsArrayEmptyErr = errors.New("Accounts array is empty")
+	accNotFoundErr        = errors.New("Account not found")
 )
 
 // Store object holds db instance
@@ -46,7 +46,7 @@ func New(dbPath string, queryTimeout uint32) (*Store, error) {
 		queryTimeout: time.Duration(queryTimeout) * time.Second,
 	}
 	s.createAccountsTable()
-	s.createTransfersTable()
+	s.createTransactionsTable()
 	return s, nil
 }
 
@@ -57,8 +57,10 @@ func (s *Store) Close() {
 
 func (s *Store) createAccountsTable() error {
 	q := `CREATE TABLE IF NOT EXISTS account (
+	    created_at TIMESTAMP DEFAULT(STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW')),
 		account_id INTEGER NOT NULL PRIMARY KEY,
-		balance REAL CHECK(balance >= 0.0)
+		balance INTEGER,
+        CHECK(balance >= 0)
 	);`
 	_, err := s.db.Exec(q)
 	if err != nil {
@@ -67,7 +69,7 @@ func (s *Store) createAccountsTable() error {
 	return nil
 }
 
-func (s *Store) createTransfersTable() error {
+func (s *Store) createTransactionsTable() error {
 	ctx, cancel := context.WithTimeout(context.Background(), s.queryTimeout)
 	defer cancel()
 
@@ -76,15 +78,16 @@ func (s *Store) createTransfersTable() error {
 		return err
 	}
 	queries := []string{
-		`CREATE TABLE IF NOT EXISTS transfer (
-	    	transfer_id INTEGER NOT NULL PRIMARY KEY,
+		`CREATE TABLE IF NOT EXISTS transactions (
+	    	transaction_id INTEGER NOT NULL PRIMARY KEY,
 	    	timestamp TIMESTAMP DEFAULT(STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW')),
 	    	from_account_id INTEGER,
 	    	to_account_id INTEGER,
-	    	amount REAL CHECK(amount > 0.0)
+	    	amount INTEGER,
+            CHECK(amount >= 0)
 	    );`,
-		`CREATE INDEX IF NOT EXISTS idx_from_account_id ON transfer(from_account_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_to_account_id ON transfer(to_account_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_from_account_id ON transactions(from_account_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_to_account_id ON transactions(to_account_id)`,
 	}
 	for _, q := range queries {
 		_, err := tx.Exec(q)
@@ -112,228 +115,143 @@ func (s *Store) dropTable(tableName string) error {
 	return nil
 }
 
-// InsertAccount inserts new account into the accounts table and returns row's id
-func (s *Store) InsertAccount(acc *models.Account) error {
-	res, err := s.db.Exec(
-		"INSERT INTO account(balance) VALUES (?)",
-		acc.Balance,
-	)
-	if err != nil {
-		return err
-	}
-	acc.AccountID, err = res.LastInsertId()
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-// GetBalance returns account balance by it's id
-func (s *Store) GetBalance(acc *models.Account) error {
+// InsertAccount inserts new account into the accounts table and returns Account model
+func (s *Store) InsertAccount(balance int64) (models.Account, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.queryTimeout)
 	defer cancel()
 
-	var balance float64
-	err := s.db.QueryRowContext(
-		ctx,
-		"SELECT balance FROM account WHERE account_id=?",
-		acc.AccountID,
-	).Scan(&balance)
-	if err != nil {
-		return err
-	}
-	acc.Balance = balance
-	return nil
-}
-
-func getAccountsBalanceTx(tx *sql.Tx, accounts []*models.Account) error {
-	if len(accounts) == 0 {
-		return accountsArrayEmptyErr
-	}
-	args := make([]interface{}, len(accounts))
-	for i, acc := range accounts {
-		args[i] = acc.AccountID
-	}
-	query := "SELECT balance FROM account WHERE account_id IN (?" + strings.Repeat(",?", len(args)-1) + ")"
-	row, err := tx.Query(query, args...)
-	if err != nil {
-		return err
-	}
-	defer row.Close()
-
-	i := 0
-	for row.Next() {
-		row.Scan(
-			&accounts[i].Balance,
-		)
-		i++
-	}
-	return nil
-}
-
-// Deposit adds money to the account
-func (s *Store) Deposit(tr *models.Transfer) (*models.Account, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), s.queryTimeout)
-	defer cancel()
-
+	var acc models.Account
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, err
-	}
-	_, err = tx.Exec(
-		"UPDATE account SET balance = balance + ? WHERE account_id=?",
-		tr.Amount,
-		tr.ToAccountID,
-	)
-	if err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-	_, err = tx.Exec(
-		"INSERT INTO transfer(from_account_id, to_account_id, amount) VALUES (0, ?, ?)",
-		tr.ToAccountID,
-		tr.Amount,
-	)
-	if err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-	acc := &models.Account{AccountID: tr.ToAccountID}
-	err = getAccountsBalanceTx(tx, []*models.Account{acc})
-	if err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-	tx.Commit()
-	return acc, nil
-}
-
-// Withdraw pulls money from the account
-func (s *Store) Withdraw(tr *models.Transfer) (*models.Account, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), s.queryTimeout)
-	defer cancel()
-
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	_, err = tx.Exec(
-		"UPDATE account SET balance = balance + ? WHERE account_id=?",
-		-tr.Amount,
-		tr.FromAccountID,
-	)
-	if err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-	_, err = tx.Exec(
-		"INSERT INTO transfer(from_account_id, to_account_id, amount) VALUES (?, 0, ?)",
-		tr.FromAccountID,
-		tr.Amount,
-	)
-	if err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-	acc := &models.Account{AccountID: tr.FromAccountID}
-	err = getAccountsBalanceTx(tx, []*models.Account{acc})
-	if err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-	tx.Commit()
-	return acc, nil
-}
-
-// Transfer transfers money from one account to another; writes transfer info into the transfers table
-func (s *Store) Transfer(tr *models.Transfer) (*models.TransferResult, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), s.queryTimeout)
-	defer cancel()
-
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	trRes := models.TransferResult{
-		ToAccount:   &models.Account{AccountID: tr.ToAccountID},
-		FromAccount: &models.Account{AccountID: tr.FromAccountID},
-	}
-	_, err = tx.Exec(
-		"UPDATE account SET balance = balance + ? WHERE account_id=?",
-		-tr.Amount,
-		tr.FromAccountID,
-	)
-	if err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-	_, err = tx.Exec(
-		"UPDATE account SET balance = balance + ? WHERE account_id=?",
-		tr.Amount,
-		tr.ToAccountID,
-	)
-	if err != nil {
-		tx.Rollback()
-		return nil, err
+		return acc, err
 	}
 	res, err := tx.Exec(
-		"INSERT INTO transfer(from_account_id, to_account_id, amount) VALUES (?, ?, ?)",
-		tr.FromAccountID,
-		tr.ToAccountID,
-		tr.Amount,
+		"INSERT INTO account(balance) VALUES (?)",
+		balance,
 	)
 	if err != nil {
 		tx.Rollback()
-		return nil, err
+		return acc, err
 	}
-	trRes.TransferID, err = res.LastInsertId()
+	accId, err := res.LastInsertId()
 	if err != nil {
 		tx.Rollback()
-		return nil, err
+		return acc, err
 	}
-	err = getAccountsBalanceTx(tx, []*models.Account{trRes.FromAccount, trRes.ToAccount})
+	err = tx.QueryRowContext(
+		ctx,
+		"SELECT * FROM account WHERE account_id=?",
+		accId,
+	).Scan(
+		&acc.CreatedAt,
+		&acc.AccountID,
+		&acc.Balance,
+	)
 	if err != nil {
 		tx.Rollback()
-		return nil, err
+		return acc, err
 	}
 	tx.Commit()
-	return &trRes, nil
+	return acc, nil
 }
 
 // DeleteAccount removes account from the accounts table
-func (s *Store) DeleteAccount(acc *models.Account) error {
-	_, err := s.db.Exec(
+func (s *Store) DeleteAccount(accId int64) error {
+	res, err := s.db.Exec(
 		"DELETE FROM account WHERE account_id=?",
-		acc.AccountID,
+		accId,
 	)
+	rowsAffected, err := res.RowsAffected()
+	if rowsAffected == 0 {
+		return accNotFoundErr
+	}
+	return err
+}
+
+// GetAccount returns account model
+func (s *Store) GetAccount(accId int64) (models.Account, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), s.queryTimeout)
+	defer cancel()
+
+	var acc models.Account
+	err := s.db.QueryRowContext(
+		ctx,
+		"SELECT * FROM account WHERE account_id=?",
+		accId,
+	).Scan(
+		&acc.CreatedAt,
+		&acc.AccountID,
+		&acc.Balance,
+	)
+	return acc, err
+}
+
+// TransferMoney transfers money from one account to another; writes transfer info into the transfers table
+func (s *Store) TransferMoney(accountToId, accountFromId, amount int64) error {
+	ctx, cancel := context.WithTimeout(context.Background(), s.queryTimeout)
+	defer cancel()
+
+	updateBalanceQuery := "UPDATE account SET balance = balance + ? WHERE account_id=?"
+
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
+	_, err = tx.Exec(
+		updateBalanceQuery,
+		-amount,
+		accountFromId,
+	)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	_, err = tx.Exec(
+		updateBalanceQuery,
+		amount,
+		accountToId,
+	)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	_, err = tx.Exec(
+		"INSERT INTO transactions(from_account_id, to_account_id, amount) VALUES (?, ?, ?)",
+		accountFromId,
+		accountToId,
+		amount,
+	)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	tx.Commit()
 	return nil
 }
 
-// GetTransfersHistory retunrs array of transcations for the requested period of time
-func (s *Store) GetTransfersHistory(req *models.TransferHisotoryRequest) ([]models.Transfer, error) {
+// GetTransactionsHistory retunrs array of transcations for the requested period of time
+func (s *Store) GetTransactionsHistory(accountId, nLastdays, limit int64) ([]models.Transaction, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.queryTimeout)
 	defer cancel()
 
 	row, err := s.db.QueryContext(
 		ctx,
-		fmt.Sprintf(`SELECT * FROM transfer WHERE 
+		fmt.Sprintf(`SELECT * FROM transactions WHERE 
 		timestamp >= date('now', '-%v day') AND 
-		(from_account_id=$1 OR to_account_id=$1)`, req.NDays),
-		req.AccountID,
+		(from_account_id=$1 OR to_account_id=$1) LIMIT $2`, nLastdays),
+		accountId,
+		limit,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer row.Close()
 
-	var res []models.Transfer
+	var res []models.Transaction
 	for row.Next() {
-		tmpRecord := models.Transfer{}
+		tmpRecord := models.Transaction{}
 		row.Scan(
-			&tmpRecord.TransferID,
+			&tmpRecord.TransactionID,
 			&tmpRecord.Timestamp,
 			&tmpRecord.FromAccountID,
 			&tmpRecord.ToAccountID,

@@ -11,6 +11,6 @@ build-static:
 .PHONY: test
 test:
 	$(call TEST,./internal/app/apiserver/...)
-	$(call TEST,./internal/app/store/sqlstore/...)
+	$(call TEST,./internal/app/store/...)
 
 .DEFAULT_GOAL := build

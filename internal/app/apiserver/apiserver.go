@@ -2,12 +2,19 @@ package apiserver
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 
-	"github.com/gasparian/money-transfers-api/internal/app/models"
 	"github.com/gasparian/money-transfers-api/internal/app/store"
 	"github.com/gasparian/money-transfers-api/internal/app/store/sqlstore"
+)
+
+var (
+	idNotPresented        = errors.New("Account id not presented in request params")
+	timeRangeNotPresented = errors.New("Number of days to query transfers stats is not presented in request params")
+	limitNotPresented     = errors.New("Query limit is not presented in reqeust params")
 )
 
 // APIServer holds data needed to run api server
@@ -52,13 +59,9 @@ func (s *APIServer) configureLogger() {
 
 func (s *APIServer) configureRouter() {
 	s.router.HandleFunc("/health", s.handleHealth())
-	s.router.HandleFunc("/create-account", s.handleCreateAccount())
-	s.router.HandleFunc("/delete-account", s.handleDeleteAccount())
-	s.router.HandleFunc("/get-balance", s.handleGetBalance())
-	s.router.HandleFunc("/deposit", s.handleDeposit())
-	s.router.HandleFunc("/withdraw", s.handleWithdraw())
-	s.router.HandleFunc("/transfer", s.handleTransfer())
-	s.router.HandleFunc("/get-transfers", s.handleGetTransfers())
+	s.router.HandleFunc("/api/v1/accounts", s.handleAccounts())
+	s.router.HandleFunc("/api/v1/transfer-money", s.handleTransferMoney())
+	s.router.HandleFunc("/api/v1/transactions", s.handleTransactions())
 }
 
 func (s *APIServer) handleHealth() http.HandlerFunc {
@@ -68,170 +71,139 @@ func (s *APIServer) handleHealth() http.HandlerFunc {
 	}
 }
 
-func (s *APIServer) apiWrapper(f func(w http.ResponseWriter, r *http.Request) error, w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-type", "application/json")
-	switch r.Method {
-	case "POST":
-		err := f(w, r)
+func (s *APIServer) handleError(err error, statusCode int, w http.ResponseWriter, r *http.Request) {
+	s.logger.Error(fmt.Sprintf("Method: %s; error: %s", r.URL.Path, err.Error()))
+	w.WriteHeader(statusCode)
+}
+
+func parseIntQueryParams(r *http.Request, paramNames ...string) (map[string]int64, error) {
+	params := r.URL.Query()
+	m := make(map[string]int64)
+	for _, param := range paramNames {
+		val := params.Get(param)
+		conv, err := strconv.ParseInt(val, 10, 64)
 		if err != nil {
-			s.logger.Error(fmt.Sprintf("Method: %s; error: %s", r.URL.Path, err.Error()))
-			w.WriteHeader(http.StatusInternalServerError)
+			return nil, err
 		}
-	default:
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		w.Write([]byte(http.StatusText(http.StatusMethodNotAllowed)))
+		m[param] = conv
+	}
+	return m, nil
+}
+
+func (s *APIServer) handleAccounts() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "POST":
+			w.Header().Set("Content-type", "application/json")
+			var acc AccountJsonView
+			err := json.NewDecoder(r.Body).Decode(&acc)
+			if err != nil {
+				s.handleError(err, http.StatusBadRequest, w, r)
+				return
+			}
+			accModel, err := s.store.InsertAccount(acc.Balance)
+			if err != nil {
+				s.handleError(err, http.StatusInternalServerError, w, r)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(AccountIDJsonView{ID: accModel.AccountID})
+		case "DELETE":
+			valMap, err := parseIntQueryParams(r, "account_id")
+			if err != nil {
+				s.handleError(err, http.StatusBadRequest, w, r)
+				return
+			}
+			err = s.store.DeleteAccount(valMap["account_id"])
+			if err != nil {
+				s.handleError(err, http.StatusInternalServerError, w, r)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		case "GET":
+			w.Header().Set("Content-type", "application/json")
+			valMap, err := parseIntQueryParams(r, "account_id")
+			if err != nil {
+				s.handleError(err, http.StatusBadRequest, w, r)
+				return
+			}
+			accModel, err := s.store.GetAccount(valMap["account_id"])
+			if err != nil {
+				s.handleError(err, http.StatusInternalServerError, w, r)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(AccountJsonView{
+				AccountID: accModel.AccountID,
+				Balance:   accModel.Balance,
+			})
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			w.Write([]byte(http.StatusText(http.StatusMethodNotAllowed)))
+		}
 	}
 }
 
-func (s *APIServer) handleCreateAccount() http.HandlerFunc {
+func (s *APIServer) handleTransferMoney() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		s.apiWrapper(
-			func(w http.ResponseWriter, r *http.Request) error {
-				var acc models.Account
-				err := json.NewDecoder(r.Body).Decode(&acc)
-				if err != nil {
-					return err
-				}
-				err = s.store.InsertAccount(&acc)
-				if err != nil {
-					return err
-				}
-				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(acc)
-				return nil
-			},
-			w, r,
-		)
+		switch r.Method {
+		case "POST":
+			var tr TransactionJsonView
+			err := json.NewDecoder(r.Body).Decode(&tr)
+			if err != nil {
+				s.handleError(err, http.StatusBadRequest, w, r)
+			}
+			err = s.store.TransferMoney(
+				tr.ToAccountID,
+				tr.FromAccountID,
+				tr.Amount,
+			)
+			if err != nil {
+				s.handleError(err, http.StatusInternalServerError, w, r)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			w.Write([]byte(http.StatusText(http.StatusMethodNotAllowed)))
+		}
 	}
 }
 
-func (s *APIServer) handleDeleteAccount() http.HandlerFunc {
+func (s *APIServer) handleTransactions() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		s.apiWrapper(
-			func(w http.ResponseWriter, r *http.Request) error {
-				var acc models.Account
-				err := json.NewDecoder(r.Body).Decode(&acc)
-				if err != nil {
-					return err
-				}
-				err = s.store.DeleteAccount(&acc)
-				if err != nil {
-					return err
-				}
-				w.WriteHeader(http.StatusOK)
-				return nil
-			},
-			w, r,
-		)
-	}
-}
+		switch r.Method {
+		case "GET":
+			w.Header().Set("Content-type", "application/json")
+			valMap, err := parseIntQueryParams(r, "account_id", "n_last_days", "limit")
+			if err != nil {
+				s.handleError(err, http.StatusBadRequest, w, r)
+				return
+			}
 
-func (s *APIServer) handleGetBalance() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		s.apiWrapper(
-			func(w http.ResponseWriter, r *http.Request) error {
-				var acc models.Account
-				err := json.NewDecoder(r.Body).Decode(&acc)
-				if err != nil {
-					return err
+			transactions, err := s.store.GetTransactionsHistory(
+				valMap["account_id"],
+				valMap["n_last_days"],
+				valMap["limit"],
+			)
+			if err != nil {
+				s.handleError(err, http.StatusInternalServerError, w, r)
+				return
+			}
+			transactionsJson := make([]TransactionJsonView, len(transactions))
+			for i, tr := range transactions {
+				transactionsJson[i] = TransactionJsonView{
+					Timestamp:     tr.Timestamp,
+					FromAccountID: tr.FromAccountID,
+					ToAccountID:   tr.ToAccountID,
+					Amount:        tr.Amount,
 				}
-				err = s.store.GetBalance(&acc)
-				if err != nil {
-					return err
-				}
-				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(acc)
-				return nil
-			},
-			w, r,
-		)
-	}
-}
-
-func (s *APIServer) handleDeposit() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		s.apiWrapper(
-			func(w http.ResponseWriter, r *http.Request) error {
-				var tr models.Transfer
-				err := json.NewDecoder(r.Body).Decode(&tr)
-				if err != nil {
-					return err
-				}
-				acc, err := s.store.Deposit(&tr)
-				if err != nil {
-					return err
-				}
-				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(acc)
-				return nil
-			},
-			w, r,
-		)
-	}
-}
-
-func (s *APIServer) handleWithdraw() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		s.apiWrapper(
-			func(w http.ResponseWriter, r *http.Request) error {
-				var tr models.Transfer
-				err := json.NewDecoder(r.Body).Decode(&tr)
-				if err != nil {
-					return err
-				}
-				acc, err := s.store.Withdraw(&tr)
-				if err != nil {
-					return err
-				}
-				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(acc)
-				return nil
-			},
-			w, r,
-		)
-	}
-}
-
-func (s *APIServer) handleTransfer() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		s.apiWrapper(
-			func(w http.ResponseWriter, r *http.Request) error {
-				var tr models.Transfer
-				err := json.NewDecoder(r.Body).Decode(&tr)
-				if err != nil {
-					return err
-				}
-				transferInfo, err := s.store.Transfer(&tr)
-				if err != nil {
-					return err
-				}
-				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(transferInfo)
-				return nil
-			},
-			w, r,
-		)
-	}
-}
-
-func (s *APIServer) handleGetTransfers() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		s.apiWrapper(
-			func(w http.ResponseWriter, r *http.Request) error {
-				var tr models.TransferHisotoryRequest
-				err := json.NewDecoder(r.Body).Decode(&tr)
-				if err != nil {
-					return err
-				}
-				transfers, err := s.store.GetTransfersHistory(&tr)
-				if err != nil {
-					return err
-				}
-				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(transfers)
-				return nil
-			},
-			w, r,
-		)
+			}
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(transactionsJson)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			w.Write([]byte(http.StatusText(http.StatusMethodNotAllowed)))
+		}
 	}
 }

@@ -4,30 +4,18 @@ import (
 	"time"
 )
 
-// Account holds id and amount of money
+// Account holds info about account that stored in the db
 type Account struct {
-	AccountID int64   `json:"account_id"`
-	Balance   float64 `json:"balance"`
+	CreatedAt time.Time
+	AccountID int64
+	Balance   int64
 }
 
-// Transfer holds data needed to perform money transfer
-type Transfer struct {
-	TransferID    int64     `json:"transfer_id"`
-	Timestamp     time.Time `json:"timestamp"`
-	FromAccountID int64     `json:"from_account_id"`
-	ToAccountID   int64     `json:"to_account_id"`
-	Amount        float64   `json:"amount"`
-}
-
-// TransferResult hodls data about performed transfer and the new balances
-type TransferResult struct {
-	ToAccount   *Account `json:"to_account"`
-	FromAccount *Account `json:"from_account"`
-	TransferID  int64    `json:"transfer_id"`
-}
-
-// TransferHisotoryRequest holds account id and the number of days to look at the past from now
-type TransferHisotoryRequest struct {
-	AccountID int64 `json:"account_id"`
-	NDays     int64 `json:"n_days"`
+// Transaction holds data needed to perform money transfer
+type Transaction struct {
+	TransactionID int64
+	Timestamp     time.Time
+	FromAccountID int64
+	ToAccountID   int64
+	Amount        int64
 }
