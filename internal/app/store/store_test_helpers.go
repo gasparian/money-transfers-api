@@ -1,11 +1,7 @@
-package store_test
+package store
 
 import (
 	"errors"
-	"github.com/gasparian/money-transfers-api/internal/app/store"
-	"github.com/gasparian/money-transfers-api/internal/app/store/kvstore"
-	"github.com/gasparian/money-transfers-api/internal/app/store/sqlstore"
-	"os"
 	"testing"
 )
 
@@ -15,7 +11,7 @@ var (
 	accountDeletionCorruptedErr = errors.New("Account deletion corrupted")
 )
 
-func testStore(store store.Store, t *testing.T) {
+func TestStore(store Store, t *testing.T) {
 	t.Run("InsertAccount", func(t *testing.T) {
 		var balance int64 = 1005
 		acc, err := store.InsertAccount(balance)
@@ -143,7 +139,7 @@ func testStore(store store.Store, t *testing.T) {
 	})
 }
 
-func testStoreConcurrentTransfer(store store.Store, t *testing.T) {
+func TestStoreConcurrentTransfer(store Store, t *testing.T) {
 	accFrom, err := store.InsertAccount(10000)
 	if err != nil {
 		t.Fatal(err)
@@ -184,23 +180,4 @@ func testStoreConcurrentTransfer(store store.Store, t *testing.T) {
 	if accToNew.Balance <= accFromNew.Balance {
 		t.Fatal(invalidBalanceValueErr)
 	}
-}
-
-func TestSqlStore(t *testing.T) {
-	dbPath := "/tmp/tets.db"
-	store, err := sqlstore.New(dbPath, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
-	defer os.RemoveAll(dbPath)
-
-	testStore(store, t)
-	testStoreConcurrentTransfer(store, t)
-}
-
-func TestKVStore(t *testing.T) {
-	store := kvstore.New()
-	testStore(store, t)
-	testStoreConcurrentTransfer(store, t)
 }
