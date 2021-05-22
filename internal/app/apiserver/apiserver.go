@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/gasparian/money-transfers-api/internal/app/models"
 	"github.com/gasparian/money-transfers-api/internal/app/store"
 	"github.com/gasparian/money-transfers-api/internal/app/store/sqlstore"
 )
@@ -96,13 +95,13 @@ func (s *APIServer) handleAccounts() http.HandlerFunc {
 		switch r.Method {
 		case "POST":
 			w.Header().Set("Content-type", "application/json")
-			var balance MoneyAmountJsonView
-			err := json.NewDecoder(r.Body).Decode(&balance)
+			var acc AccountJsonView
+			err := json.NewDecoder(r.Body).Decode(&acc)
 			if err != nil {
 				s.handleError(err, http.StatusBadRequest, w, r)
 				return
 			}
-			accModel, err := s.store.InsertAccount(models.MoneyAmount(balance))
+			accModel, err := s.store.InsertAccount(acc.Balance)
 			if err != nil {
 				s.handleError(err, http.StatusInternalServerError, w, r)
 				return
@@ -136,7 +135,7 @@ func (s *APIServer) handleAccounts() http.HandlerFunc {
 			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(AccountJsonView{
 				AccountID: accModel.AccountID,
-				Balance:   MoneyAmountJsonView(accModel.Balance),
+				Balance:   accModel.Balance,
 			})
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -157,7 +156,7 @@ func (s *APIServer) handleTransferMoney() http.HandlerFunc {
 			err = s.store.TransferMoney(
 				tr.ToAccountID,
 				tr.FromAccountID,
-				models.MoneyAmount(tr.Amount),
+				tr.Amount,
 			)
 			if err != nil {
 				s.handleError(err, http.StatusInternalServerError, w, r)
@@ -197,7 +196,7 @@ func (s *APIServer) handleTransactions() http.HandlerFunc {
 					Timestamp:     tr.Timestamp,
 					FromAccountID: tr.FromAccountID,
 					ToAccountID:   tr.ToAccountID,
-					Amount:        MoneyAmountJsonView(tr.Amount),
+					Amount:        tr.Amount,
 				}
 			}
 			w.WriteHeader(http.StatusOK)

@@ -2,12 +2,10 @@ package store_test
 
 import (
 	"errors"
-	"github.com/gasparian/money-transfers-api/internal/app/models"
 	"github.com/gasparian/money-transfers-api/internal/app/store"
 	"github.com/gasparian/money-transfers-api/internal/app/store/kvstore"
 	"github.com/gasparian/money-transfers-api/internal/app/store/sqlstore"
 	"os"
-	"reflect"
 	"testing"
 )
 
@@ -19,19 +17,18 @@ var (
 
 func testStore(store store.Store, t *testing.T) {
 	t.Run("InsertAccount", func(t *testing.T) {
-		balance := models.MoneyAmount{Integer: 10, Fraction: 5}
+		var balance int64 = 1005
 		acc, err := store.InsertAccount(balance)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !reflect.DeepEqual(&balance, &acc.Balance) {
+		if balance != acc.Balance {
 			t.Error(invalidBalanceValueErr)
 		}
 	})
 
 	t.Run("DeleteAccount", func(t *testing.T) {
-		balance := models.MoneyAmount{Integer: 10, Fraction: 5}
-		acc, err := store.InsertAccount(balance)
+		acc, err := store.InsertAccount(1005)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -51,18 +48,18 @@ func testStore(store store.Store, t *testing.T) {
 	})
 
 	t.Run("TransferGetAccount", func(t *testing.T) {
-		accFrom, err := store.InsertAccount(models.MoneyAmount{Integer: 100})
+		accFrom, err := store.InsertAccount(10000)
 		if err != nil {
 			t.Fatal(err)
 		}
-		accTo, err := store.InsertAccount(models.MoneyAmount{Integer: 10})
+		accTo, err := store.InsertAccount(1000)
 		if err != nil {
 			t.Fatal(err)
 		}
 		err = store.TransferMoney(
 			accTo.AccountID,
 			accFrom.AccountID,
-			models.MoneyAmount{Integer: 90},
+			9000,
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -75,30 +72,24 @@ func testStore(store store.Store, t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !(reflect.DeepEqual(&accToNew.Balance, &accFrom.Balance) && reflect.DeepEqual(&accFromNew.Balance, &accTo.Balance)) {
+		if accToNew.Balance != accFrom.Balance || accFromNew.Balance != accTo.Balance {
 			t.Error(transactionCorruptedErr)
 		}
 	})
 
 	t.Run("TransferNegativeResult", func(t *testing.T) {
-		accFrom, err := store.InsertAccount(models.MoneyAmount{
-			Integer: 0, Fraction: 50,
-		})
+		accFrom, err := store.InsertAccount(50)
 		if err != nil {
 			t.Fatal(err)
 		}
-		accTo, err := store.InsertAccount(models.MoneyAmount{
-			Integer: 10, Fraction: 0,
-		})
+		accTo, err := store.InsertAccount(1000)
 		if err != nil {
 			t.Fatal(err)
 		}
 		err = store.TransferMoney(
 			accTo.AccountID,
 			accFrom.AccountID,
-			models.MoneyAmount{
-				Integer: 11, Fraction: 50,
-			},
+			1150,
 		)
 		if err == nil {
 			t.Error(transactionCorruptedErr)
@@ -106,11 +97,11 @@ func testStore(store store.Store, t *testing.T) {
 	})
 
 	t.Run("GetTransactions", func(t *testing.T) {
-		accFrom, err := store.InsertAccount(models.MoneyAmount{Integer: 100})
+		accFrom, err := store.InsertAccount(10000)
 		if err != nil {
 			t.Fatal(err)
 		}
-		accTo, err := store.InsertAccount(models.MoneyAmount{Integer: 0})
+		accTo, err := store.InsertAccount(0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -118,7 +109,7 @@ func testStore(store store.Store, t *testing.T) {
 			err = store.TransferMoney(
 				accTo.AccountID,
 				accFrom.AccountID,
-				models.MoneyAmount{Integer: 20},
+				2000,
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -134,11 +125,11 @@ func testStore(store store.Store, t *testing.T) {
 		if len(transactions) != 3 {
 			t.Error(transactionCorruptedErr)
 		}
-		summ := &models.MoneyAmount{}
+		var summ int64 = 0
 		for _, transaction := range transactions {
-			summ = models.SumMoney(summ, &transaction.Amount)
+			summ += transaction.Amount
 		}
-		if summ.Integer != 60 {
+		if summ != 6000 {
 			t.Fatal(transactionCorruptedErr)
 		}
 		accToNew, err := store.GetAccount(accTo.AccountID)
@@ -146,20 +137,18 @@ func testStore(store store.Store, t *testing.T) {
 			t.Fatal(err)
 		}
 		accFromNew, _ := store.GetAccount(accFrom.AccountID)
-		if !reflect.DeepEqual(&accFrom.Balance, &accToNew.Balance) || !reflect.DeepEqual(&accTo.Balance, &accFromNew.Balance) {
+		if accFrom.Balance != accToNew.Balance || accTo.Balance != accFromNew.Balance {
 			t.Error(transactionCorruptedErr)
 		}
 	})
 }
 
 func testStoreConcurrentTransfer(store store.Store, t *testing.T) {
-	accFrom := models.Account{Balance: models.MoneyAmount{Integer: 100}}
-	accFrom, err := store.InsertAccount(accFrom.Balance)
+	accFrom, err := store.InsertAccount(10000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	accTo := models.Account{}
-	accTo, err = store.InsertAccount(accTo.Balance)
+	accTo, err := store.InsertAccount(0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +160,7 @@ func testStoreConcurrentTransfer(store store.Store, t *testing.T) {
 			err := store.TransferMoney(
 				accToId,
 				accFromId,
-				models.MoneyAmount{Integer: 1},
+				100,
 			)
 			errs <- err
 		}(accTo.AccountID, accFrom.AccountID)
@@ -192,7 +181,7 @@ func testStoreConcurrentTransfer(store store.Store, t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if models.CompareMoney(&accToNew.Balance, &accFromNew.Balance) < 1 {
+	if accToNew.Balance <= accFromNew.Balance {
 		t.Fatal(invalidBalanceValueErr)
 	}
 }

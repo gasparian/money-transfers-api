@@ -27,15 +27,18 @@ After a successful build, you only have to run binary to start the server:
 ```  
 
 ### API Reference  
+ Server uses `int64` numbers to represent the money, to make all calculations without computation errors.  
+ To get the real value - just convert integer to float and divide the value by 100, and do everything in reverse order to convert real value to integer.  
+
  - `GET /health`:  
    - `curl -v -X GET http://localhost:8010/health`;  
    - Returns `OK` if server is up and running;  
  - `POST /api/v1/accounts`:  
-   - Gets `balance` value:
+   - Gets integer `balance` value:
      ```
      curl -v -X POST \
           -H "Content-Type: application/json" \
-          --data '{"integer": 100}' \
+          --data '{"balance": 10000}' \
           http://localhost:8010/api/v1/accounts
    - Returns account structure filled with created `id`: 
      ```
@@ -59,18 +62,14 @@ After a successful build, you only have to run binary to start the server:
      ```
      {
         "account_id":1,
-        "balance":
-          {
-            "integer": 100,
-            "fraction":0,
-          }
+        "balance":10000
      }  
  - `POST /api/v1/transfer-money`:  
    - Gets two `account_id` values and `amount` of money to transfer: 
      ```
      curl -v -X POST \
           -H "Content-Type: application/json" \
-          --data '{"from_account_id": 1, "to_account_id": 2, "amount": {"integer": 50, "fraction": 0}}' \
+          --data '{"from_account_id": 1, "to_account_id": 2, "amount": 5000}' \
           http://localhost:8010/api/v1/transfer-money
    - Returns 204 status code if the money transfer was successful;  
  - `GET /api/v1/transactions`:  
@@ -88,29 +87,18 @@ After a successful build, you only have to run binary to start the server:
          "timestamp":"2021-05-16T08:56:36.953Z",
          "from_account_id":1,
          "to_account_id":2,
-         "amount":
-           {
-             "integer":50,"fraction":0
-           }
+         "amount":5000
        },
        {
          "timestamp":"2021-05-16T09:09:32.396Z",
          "from_account_id":1,
          "to_account_id":2,
-         "amount":
-           {
-             "integer":10,
-             "fraction":0
-           }
+         "amount":1000
        },
        {
          "timestamp":"2021-05-16T09:09:34.423Z",
          "from_account_id":1,
          "to_account_id":2,
-         "amount":
-           {
-             "integer":10,
-             "fraction":0
-           }
+         "amount":1000
        }
      ]

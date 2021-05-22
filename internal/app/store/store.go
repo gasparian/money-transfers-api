@@ -6,9 +6,9 @@ import (
 
 // Store ...
 type Store interface {
-	InsertAccount(models.MoneyAmount) (models.Account, error)
+	InsertAccount(balance int64) (models.Account, error)
 	DeleteAccount(accountId int64) error
 	GetAccount(accountId int64) (models.Account, error)
-	TransferMoney(accountToId, accountFromId int64, amount models.MoneyAmount) error
+	TransferMoney(accountToId, accountFromId, amount int64) error
 	GetTransactionsHistory(accountId, nLastDays, limit int64) ([]models.Transaction, error)
 }

@@ -59,9 +59,8 @@ func (s *Store) createAccountsTable() error {
 	q := `CREATE TABLE IF NOT EXISTS account (
 	    created_at TIMESTAMP DEFAULT(STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW')),
 		account_id INTEGER NOT NULL PRIMARY KEY,
-		integer_balance INTEGER,
-		fraction_balance INTEGER, 
-        CHECK(integer_balance >= 0 AND fraction_balance >= 0 AND fraction_balance <= 100)
+		balance INTEGER,
+        CHECK(balance >= 0)
 	);`
 	_, err := s.db.Exec(q)
 	if err != nil {
@@ -84,9 +83,8 @@ func (s *Store) createTransactionsTable() error {
 	    	timestamp TIMESTAMP DEFAULT(STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW')),
 	    	from_account_id INTEGER,
 	    	to_account_id INTEGER,
-	    	integer_amount INTEGER,
-	    	fraction_amount INTEGER,
-            CHECK(integer_amount >= 0 AND fraction_amount >= 0 AND fraction_amount <= 100)
+	    	amount INTEGER,
+            CHECK(amount >= 0)
 	    );`,
 		`CREATE INDEX IF NOT EXISTS idx_from_account_id ON transactions(from_account_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_to_account_id ON transactions(to_account_id)`,
@@ -118,7 +116,7 @@ func (s *Store) dropTable(tableName string) error {
 }
 
 // InsertAccount inserts new account into the accounts table and returns Account model
-func (s *Store) InsertAccount(balance models.MoneyAmount) (models.Account, error) {
+func (s *Store) InsertAccount(balance int64) (models.Account, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.queryTimeout)
 	defer cancel()
 
@@ -128,9 +126,8 @@ func (s *Store) InsertAccount(balance models.MoneyAmount) (models.Account, error
 		return acc, err
 	}
 	res, err := tx.Exec(
-		"INSERT INTO account(integer_balance, fraction_balance) VALUES (?, ?)",
-		balance.Integer,
-		balance.Fraction,
+		"INSERT INTO account(balance) VALUES (?)",
+		balance,
 	)
 	if err != nil {
 		tx.Rollback()
@@ -148,8 +145,7 @@ func (s *Store) InsertAccount(balance models.MoneyAmount) (models.Account, error
 	).Scan(
 		&acc.CreatedAt,
 		&acc.AccountID,
-		&acc.Balance.Integer,
-		&acc.Balance.Fraction,
+		&acc.Balance,
 	)
 	if err != nil {
 		tx.Rollback()
@@ -185,18 +181,17 @@ func (s *Store) GetAccount(accId int64) (models.Account, error) {
 	).Scan(
 		&acc.CreatedAt,
 		&acc.AccountID,
-		&acc.Balance.Integer,
-		&acc.Balance.Fraction,
+		&acc.Balance,
 	)
 	return acc, err
 }
 
 // TransferMoney transfers money from one account to another; writes transfer info into the transfers table
-func (s *Store) TransferMoney(accountToId, accountFromId int64, amount models.MoneyAmount) error {
+func (s *Store) TransferMoney(accountToId, accountFromId, amount int64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), s.queryTimeout)
 	defer cancel()
 
-	updateBalanceQuery := "UPDATE account SET integer_balance = integer_balance + ?, fraction_balance = fraction_balance + ? WHERE account_id=?"
+	updateBalanceQuery := "UPDATE account SET balance = balance + ? WHERE account_id=?"
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -204,8 +199,7 @@ func (s *Store) TransferMoney(accountToId, accountFromId int64, amount models.Mo
 	}
 	_, err = tx.Exec(
 		updateBalanceQuery,
-		-amount.Integer,
-		-amount.Fraction,
+		-amount,
 		accountFromId,
 	)
 	if err != nil {
@@ -214,8 +208,7 @@ func (s *Store) TransferMoney(accountToId, accountFromId int64, amount models.Mo
 	}
 	_, err = tx.Exec(
 		updateBalanceQuery,
-		amount.Integer,
-		amount.Fraction,
+		amount,
 		accountToId,
 	)
 	if err != nil {
@@ -223,11 +216,10 @@ func (s *Store) TransferMoney(accountToId, accountFromId int64, amount models.Mo
 		return err
 	}
 	_, err = tx.Exec(
-		"INSERT INTO transactions(from_account_id, to_account_id, integer_amount, fraction_amount) VALUES (?, ?, ?, ?)",
+		"INSERT INTO transactions(from_account_id, to_account_id, amount) VALUES (?, ?, ?)",
 		accountFromId,
 		accountToId,
-		amount.Integer,
-		amount.Fraction,
+		amount,
 	)
 	if err != nil {
 		tx.Rollback()
@@ -263,8 +255,7 @@ func (s *Store) GetTransactionsHistory(accountId, nLastdays, limit int64) ([]mod
 			&tmpRecord.Timestamp,
 			&tmpRecord.FromAccountID,
 			&tmpRecord.ToAccountID,
-			&tmpRecord.Amount.Integer,
-			&tmpRecord.Amount.Fraction,
+			&tmpRecord.Amount,
 		)
 		res = append(res, tmpRecord)
 	}
