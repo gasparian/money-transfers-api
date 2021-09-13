@@ -1,7 +1,7 @@
 ![main build](https://github.com/gasparian/money-transfers-api/actions/workflows/build.yml/badge.svg?branch=main)
 ![main tests](https://github.com/gasparian/money-transfers-api/actions/workflows/test.yml/badge.svg?branch=main)
 # money-transfers-api
-Simple API for money transfers between accounts, implemented in Go.  
+[Revolut](https://www.revolut.com/) backend test assignment. Simple API for money transfers between accounts, implemented in Go.  
 
 ### Building and running  
 
