@@ -6,7 +6,10 @@ build:
 	go build -v ./cmd/apiserver
 
 build-static:
-	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -v -a ./cmd/apiserver
+	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
+		-ldflags "-w -extldflags -static" \
+		-tags sqlite_omit_load_extension,osusergo,netgo \
+		-v -a ./cmd/apiserver
 
 .PHONY: test
 test:
